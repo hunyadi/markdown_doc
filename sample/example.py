@@ -2,8 +2,6 @@
 This is a module with sample Python classes, exceptions, functions, etc.
 """
 
-from __future__ import annotations
-
 import enum
 from dataclasses import dataclass
 from datetime import datetime
@@ -53,6 +51,8 @@ class SampleClass:
     A data-class with several member variables.
 
     This class is extended by :class:`DerivedClass`.
+
+    This class implements total ordering with :meth:`__lt__`, :meth:`SampleClass.__le__`, :meth:`SampleClass.__ge__` and :meth:`__gt__`.
 
     Class doc-strings can include code blocks.
 

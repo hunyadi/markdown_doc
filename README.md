@@ -1,21 +1,64 @@
 # Generate Markdown documentation from Python code
 
-This library generates Markdown documentation directly from Python code.
+This library generates Markdown documentation directly from Python code, making heavy use of Python type annotations.
 
-## Features
+## Features at a glance
 
 * Each module produces a Markdown file.
 * [Documentation strings](https://docs.python.org/3/library/stdtypes.html#definition.__doc__) are extracted from module, class, enumeration and function definitions.
-* Cross-references work across modules.
-* Data-class member descriptions (`:param ...:`) are validated if they have a matching member variable declaration.
+* Cross-references may be local or fully-qualified, and work across modules.
+* Data-class field descriptions are validated if they have a matching member variable declaration.
 * All enumeration members are published, even if they lack a description.
 * Magic methods (e.g. `__eq__`) are published if they have a doc-string.
 * Multi-line code blocks in doc-strings are retained as Markdown code blocks.
 * Forward-references and type annotations as strings are automatically evaluated.
 
+## Documentation features
+
+Cross-references with Sphinx-style syntax (`:mod:`, `:class:` and `:meth:`) are supported in module, class and function doc-strings:
+
+```python
+@dataclass
+class SampleClass:
+    """
+    This class is extended by :class:`DerivedClass`.
+
+    This class implements :meth:`__lt__` and :meth:`SampleClass.__gt__`.
+    """
+```
+
+Data-class field descriptions are defined with `:param ...:`:
+
+```python
+@dataclass
+class DerivedClass(SampleClass):
+    """
+    This data-class derives from another base class.
+
+    :param union: A union of several types.
+    :param json: A complex type with type substitution.
+    :param schema: A complex type without type substitution.
+    """
+
+    union: SimpleType
+    json: JsonType
+    schema: Schema
+```
+
+Enumeration member description follows the member value assignment:
+
+```python
+class EnumType(enum.Enum):
+    enabled = "enabled"
+    "Documents the enumeration member `enabled`."
+
+    disabled = "disabled"
+    "Documents the enumeration member `disabled`."
+```
+
 ## Usage
 
-### Python
+### Calling the utility in Python
 
 ```python
 from markdown_doc.generator import MarkdownGenerator
@@ -23,7 +66,7 @@ from markdown_doc.generator import MarkdownGenerator
 MarkdownGenerator([module1, module2, module3]).generate(out_dir)
 ```
 
-### Command line
+### Running the utility from the command line
 
 ```
 $ python3 -m markdown_doc --help
