@@ -3,9 +3,11 @@ This is a module with sample Python classes, exceptions, functions, etc.
 """
 
 import enum
+import sys
+import typing
 from dataclasses import dataclass
 from datetime import datetime
-import sys
+from typing import Optional, Union
 
 from strong_typing.auxiliary import int8, int16, uint32, uint64
 from strong_typing.core import JsonType, Schema
@@ -114,7 +116,14 @@ class SampleClass:
 
         :returns: A JSON object.
         """
-        ...
+
+        return {
+            "boolean": self.boolean,
+            "integer": self.integer,
+            "double": self.double,
+            "string": self.string,
+            "enumeration": self.enumeration.value,
+        }
 
     @staticmethod
     def from_json(obj: "JsonType") -> "SampleClass":
@@ -124,7 +133,15 @@ class SampleClass:
         :param obj: A JSON object.
         :returns: An instance of this class.
         """
-        ...
+
+        o = typing.cast(dict[str, JsonType], obj)
+        return SampleClass(
+            boolean=typing.cast(bool, o["boolean"]),
+            integer=typing.cast(int, o["integer"]),
+            double=typing.cast(float, o["double"]),
+            string=typing.cast(str, o["string"]),
+            enumeration=EnumType(o["enumeration"]),
+        )
 
 
 @dataclass
@@ -157,6 +174,31 @@ class FixedWidthIntegers:
     integer16: int16
     unsigned32: uint32
     unsigned64: uint64
+
+
+@dataclass
+class OptionalValues:
+    """
+    A data-class with optional member variables.
+
+    :param boolean: An optional member variable of type `bool`.
+    :param integer: An optional member variable of type `int`.
+    :param double: An optional member variable of type `float`.
+    :param string: An optional member variable of type `str`.
+    :param enumeration: An optional member variable with an enumeration type.
+    :param complex: An optional member variable of a user-defined class.
+    :param optional: A member variable with `typing.Optional`.
+    :param union: A member variable with `typing.Union`.
+    """
+
+    boolean: bool | None
+    integer: int | None
+    double: float | None
+    string: str | None
+    enumeration: EnumType | None
+    complex: SampleClass | None
+    optional: Optional["SampleClass"]
+    union: Union[SampleClass, "DerivedClass", None]
 
 
 @dataclass
@@ -202,11 +244,12 @@ def send_message(
     :param priority: The priority of the message, can be a number 1-5.
     :returns: The message identifier.
     """
-    pass
+    return 23
 
 
 if __name__ == "__main__":
     from pathlib import Path
+
     from markdown_doc.generator import MarkdownGenerator
 
     MarkdownGenerator([sys.modules[__name__]]).generate(

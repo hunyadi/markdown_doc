@@ -104,7 +104,8 @@ def replace_links(text: str) -> str:
 def safe_name(name: str) -> str:
     "Object name with those characters escaped that are allowed in Python identifiers but have special meaning in Markdown."
 
-    return name.replace("_", "\\_")
+    regex = re.compile(r"(\b_+|_+\b)")
+    return regex.sub(lambda m: m.group(0).replace("_", "\\_"), name)
 
 
 def safe_id(name: str) -> str:
@@ -121,9 +122,11 @@ def module_path(target: str, source: str) -> str:
     source_path = Path("/" + source.replace(".", "/") + ".md")
     target_dir = target_path.parent
     source_dir = source_path.parent
-    return (
-        Path(target_dir).relative_to(source_dir, walk_up=True) / target_path.name
-    ).as_posix()
+    if sys.version_info >= (3, 12):
+        relative_path = Path(target_dir).relative_to(source_dir, walk_up=True)
+    else:
+        relative_path = Path(os.path.relpath(target_dir, start=source_dir))
+    return (relative_path / target_path.name).as_posix()
 
 
 def module_anchor(module: ModuleType) -> str:
@@ -220,7 +223,8 @@ class Resolver(abc.ABC):
     "Translates string references to the corresponding Python type within the context of an encapsulating type."
 
     @abc.abstractmethod
-    def evaluate(self, ref: str) -> type: ...
+    def evaluate(self, ref: str) -> type:
+        ...
 
     def evaluate_global(self, ref: str) -> type | None:
         try:
