@@ -1,27 +1,28 @@
-import abc
-import ast
+"""
+Generate Markdown documentation from Python code
+
+Copyright 2024, Levente Hunyadi
+
+:see: https://github.com/hunyadi/markdown_doc
+"""
+
+import enum
 import inspect
 import logging
 import os
 import re
 import sys
-import typing
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import FunctionType, ModuleType
 
 from strong_typing.docstring import check_docstring, parse_type
-from strong_typing.inspection import (
-    DataclassInstance,
-    get_module_classes,
-    is_dataclass_type,
-    is_type_enum,
-)
+from strong_typing.inspection import DataclassInstance, get_module_classes, is_dataclass_type, is_type_enum
 from strong_typing.name import TypeFormatter
 
-
-class DocumentationError(RuntimeError):
-    pass
+from .docstring import enum_labels
+from .resolver import ClassResolver, FunctionResolver, MemberResolver, ModuleResolver, Resolver
 
 
 def replace_links(text: str) -> str:
@@ -71,7 +72,7 @@ def replace_links(text: str) -> str:
             )*
             \)
             |                              #   or
-            [^\s`!()\[\]{};:'".,<>?«»“”‘’] # not a space or one of these punct chars
+            [^\s`!()\[\]{};:'".,<>?«»“”‘’] # not a space or one of these punctuation chars
         )
         |					# OR, the following to match naked domains:
         (?:
@@ -112,9 +113,7 @@ def safe_id(name: str) -> str:
     "Object identifier that qualifies as a Markdown anchor."
 
     parts = name.split(".")
-    return ".".join(
-        (part if not part.startswith("__") else f"sp{part}") for part in parts
-    )
+    return ".".join((part if not part.startswith("__") else f"sp{part}") for part in parts)
 
 
 def module_path(target: str, source: str) -> str:
@@ -132,7 +131,7 @@ def module_path(target: str, source: str) -> str:
 def module_anchor(module: ModuleType) -> str:
     "Module anchor within a Markdown file."
 
-    return f"{{#{safe_id(module.__name__)}}}"
+    return safe_id(module.__name__)
 
 
 def module_link(module: ModuleType, context: ModuleType) -> str:
@@ -144,8 +143,7 @@ def module_link(module: ModuleType, context: ModuleType) -> str:
 def class_anchor(cls: type) -> str:
     "Class or function anchor within a Markdown file."
 
-    qualname = f"{cls.__module__}.{cls.__qualname__}"
-    return f"{{#{safe_id(qualname)}}}"
+    return safe_id(f"{cls.__module__}.{cls.__qualname__}")
 
 
 def class_link(cls: type, context: ModuleType) -> str:
@@ -163,193 +161,6 @@ def class_link(cls: type, context: ModuleType) -> str:
     return f"[{safe_name(cls.__name__)}]({link})"
 
 
-def _try_get_assignment(stmt: ast.stmt) -> str | None:
-    "Extracts the enumeration name for a member found in a class definition."
-
-    if not isinstance(stmt, ast.Assign):
-        return None
-    if len(stmt.targets) != 1:
-        return None
-    target = stmt.targets[0]
-    if not isinstance(target, ast.Name):
-        return None
-    return target.id
-
-
-def _try_get_literal(stmt: ast.stmt) -> str | None:
-    "Extracts the follow-up description for an enumeration member."
-
-    if not isinstance(stmt, ast.Expr):
-        return None
-    if not isinstance(constant := stmt.value, ast.Constant):
-        return None
-    if not isinstance(docstring := constant.value, str):
-        return None
-    return docstring
-
-
-def enum_labels(cls: type[Enum]) -> dict[str, str]:
-    """
-    Maps enumeration member names to their follow-up description.
-
-    :param cls: An enumeration class type.
-    :returns: Maps enumeration names to their description (if present).
-    """
-
-    body = ast.parse(inspect.getsource(cls)).body
-    if len(body) != 1:
-        raise TypeError("expected: a module with a single enumeration class")
-
-    classdef = body[0]
-    if not isinstance(classdef, ast.ClassDef):
-        raise TypeError("expected: an enumeration class definition")
-
-    enum_doc: dict[str, str] = {}
-    enum_name: str | None = None
-    for stmt in classdef.body:
-        if enum_name is not None:
-            # description must immediately follow enumeration member definition
-            enum_desc = _try_get_literal(stmt)
-            if enum_desc is not None:
-                enum_doc[enum_name] = enum_desc
-                enum_name = None
-                continue
-
-        enum_name = _try_get_assignment(stmt)
-    return enum_doc
-
-
-class Resolver(abc.ABC):
-    "Translates string references to the corresponding Python type within the context of an encapsulating type."
-
-    @abc.abstractmethod
-    def evaluate(self, ref: str) -> type:
-        ...
-
-    def evaluate_global(self, ref: str) -> type | None:
-        try:
-            # evaluate as fully-qualified reference in each loaded module
-            for name, module in sys.modules.items():
-                if ref == name:
-                    return typing.cast(type, module)
-                prefix = f"{name}."
-                if ref.startswith(prefix):
-                    return eval(ref.removeprefix(prefix), module.__dict__, locals())
-        except NameError:
-            pass
-
-        return None
-
-
-class ModuleResolver(Resolver):
-    "A resolver that operates within the top-level context of a module."
-
-    module: ModuleType
-
-    def __init__(self, module: ModuleType):
-        super().__init__()
-        self.module = module
-
-    def _evaluate(self, ref: str) -> type | None:
-        obj = self.evaluate_global(ref)
-        if obj is not None:
-            return obj
-
-        try:
-            # evaluate as module-local reference
-            return eval(ref, self.module.__dict__, locals())
-        except NameError:
-            pass
-
-        return None
-
-    def evaluate(self, ref: str) -> type:
-        obj = self._evaluate(ref)
-        if obj is not None:
-            return obj
-
-        raise DocumentationError(
-            f"`{ref}` is not defined in the context of module `{self.module.__name__}`"
-        )
-
-
-class ClassResolver(Resolver):
-    "A resolver that operates within the context of a class."
-
-    cls: type
-
-    def __init__(self, cls: type):
-        super().__init__()
-        self.cls = cls
-
-    def _evaluate(self, ref: str) -> type | None:
-        obj = self.evaluate_global(ref)
-        if obj is not None:
-            return obj
-
-        try:
-            # evaluate as module-local reference
-            module = sys.modules[self.cls.__module__]
-            return eval(ref, module.__dict__, locals())
-        except NameError:
-            pass
-
-        try:
-            # evaluate as class-local reference
-            return eval(ref, dict(self.cls.__dict__), locals())
-        except NameError:
-            pass
-
-        return None
-
-    def evaluate(self, ref: str) -> type:
-        obj = self._evaluate(ref)
-        if obj is not None:
-            return obj
-
-        raise DocumentationError(
-            f"`{ref}` is not defined in the context of class `{self.cls.__name__}` in module `{self.cls.__module__}`"
-        )
-
-
-class MemberResolver(ClassResolver):
-    "A resolver that operates within the context of a member property of a class."
-
-    member_name: str
-
-    def __init__(self, cls: type, member_name: str):
-        super().__init__(cls)
-        self.member_name = member_name
-
-    def evaluate(self, ref: str) -> type:
-        obj = self._evaluate(ref)
-        if obj is not None:
-            return obj
-
-        raise DocumentationError(
-            f"`{ref}` is not defined in the context of member `{self.member_name}` in class `{self.cls.__name__}` in module `{self.cls.__module__}`"
-        )
-
-
-class FunctionResolver(ClassResolver):
-    "A resolver that operates within the context of a member function of a class."
-
-    func_name: str
-
-    def __init__(self, cls: type, func_name: str):
-        super().__init__(cls)
-        self.func_name = func_name
-
-    def evaluate(self, ref: str) -> type:
-        obj = self._evaluate(ref)
-        if obj is not None:
-            return obj
-
-        raise DocumentationError(
-            f"`{ref}` is not defined in the context of function `{self.func_name}` in class `{self.cls.__name__}` in module `{self.cls.__module__}`"
-        )
-
-
 class MarkdownWriter:
     "Writes lines to a Markdown document."
 
@@ -362,13 +173,41 @@ class MarkdownWriter:
         self.lines.append(line)
 
 
+@enum.unique
+class MarkdownAnchorStyle(enum.Enum):
+    "Output format for generating anchors in headings."
+
+    GITBOOK = "GitBook"
+    GITHUB = "GitHub"
+
+
+@dataclass
+class MarkdownOptions:
+    """
+    Options for generating Markdown output.
+
+    :param anchor_style: Output format for generating anchors in headings.
+    """
+
+    anchor_style: MarkdownAnchorStyle = MarkdownAnchorStyle.GITHUB
+
+
 class MarkdownGenerator:
     "Generates Markdown documentation for a list of modules."
 
     modules: list[ModuleType]
+    options: MarkdownOptions
 
-    def __init__(self, modules: list[ModuleType]) -> None:
+    def __init__(self, modules: list[ModuleType], *, options: MarkdownOptions | None = None) -> None:
         self.modules = modules
+        self.options = options if options is not None else MarkdownOptions()
+
+    def _heading_anchor(self, anchor: str, text: str) -> str:
+        match self.options.anchor_style:
+            case MarkdownAnchorStyle.GITHUB:
+                return f'<a name="{anchor}"></a> {text}'
+            case MarkdownAnchorStyle.GITBOOK:
+                return text + " {#" + anchor + "}"
 
     def _module_link(self, module: ModuleType, context: ModuleType) -> str:
         "Creates a link to a class if it is part of the exported batch."
@@ -378,15 +217,11 @@ class MarkdownGenerator:
         else:
             return safe_name(module.__name__)
 
-    def _replace_module_ref(
-        self, m: re.Match[str], resolver: Resolver, context: ModuleType
-    ) -> str:
+    def _replace_module_ref(self, m: re.Match[str], resolver: Resolver, context: ModuleType) -> str:
         ref: str = m.group(1)
         obj = resolver.evaluate(ref)
         if not isinstance(obj, ModuleType):
-            raise ValueError(
-                f"expected: module reference; got: {obj} of type {type(obj)}"
-            )
+            raise ValueError(f"expected: module reference; got: {obj} of type {type(obj)}")
         return self._module_link(obj, context)
 
     def _class_link(self, cls: type, context: ModuleType) -> str:
@@ -398,26 +233,18 @@ class MarkdownGenerator:
         else:
             return safe_name(cls.__name__)
 
-    def _replace_class_ref(
-        self, m: re.Match[str], resolver: Resolver, context: ModuleType
-    ) -> str:
+    def _replace_class_ref(self, m: re.Match[str], resolver: Resolver, context: ModuleType) -> str:
         ref: str = m.group(1)
         obj = resolver.evaluate(ref)
         if isinstance(obj, ModuleType) or isinstance(obj, FunctionType):
-            raise ValueError(
-                f"expected: class reference; got: {obj} of type {type(obj)}"
-            )
+            raise ValueError(f"expected: class reference; got: {obj} of type {type(obj)}")
         return self._class_link(obj, context)
 
-    def _replace_func_ref(
-        self, m: re.Match[str], resolver: Resolver, context: ModuleType
-    ) -> str:
+    def _replace_func_ref(self, m: re.Match[str], resolver: Resolver, context: ModuleType) -> str:
         ref: str = m.group(1)
         obj = resolver.evaluate(ref)
         if not isinstance(obj, FunctionType):
-            raise ValueError(
-                f"expected: function reference; got: {obj} of type {type(obj)}"
-            )
+            raise ValueError(f"expected: function reference; got: {obj} of type {type(obj)}")
         return self._class_link(obj, context)
 
     def _replace_refs(self, text: str, resolver: Resolver, context: ModuleType) -> str:
@@ -434,9 +261,7 @@ class MarkdownGenerator:
 
         return text
 
-    def _transform_text(
-        self, text: str, resolver: Resolver, context: ModuleType
-    ) -> str:
+    def _transform_text(self, text: str, resolver: Resolver, context: ModuleType) -> str:
         """
         Applies transformations to module, class or parameter doc-string text.
 
@@ -474,9 +299,7 @@ class MarkdownGenerator:
         module = sys.modules[cls.__module__]
         bases = [b for b in cls.__bases__ if b is not object]
         if len(bases) > 0:
-            w.print(
-                f"**Bases:** {', '.join(self._class_link(b, module) for b in bases)}"
-            )
+            w.print(f"**Bases:** {', '.join(self._class_link(b, module) for b in bases)}")
             w.print()
 
     def _generate_functions(self, cls: type, w: MarkdownWriter) -> None:
@@ -505,9 +328,8 @@ class MarkdownGenerator:
                 returns = f" → {func_returns}"
             else:
                 returns = ""
-            w.print(
-                f"### {safe_name(func_name)} ( {param_list} ){returns} {class_anchor(func)}"
-            )
+            title = f"{safe_name(func_name)} ( {param_list} ){returns}"
+            w.print(f"### {self._heading_anchor(class_anchor(func), title)}")
             w.print()
 
             w.print(self._transform_text(description, ClassResolver(cls), module))
@@ -519,12 +341,8 @@ class MarkdownGenerator:
 
                 for param_name, param in docstring.params.items():
                     param_type = fmt.python_type_to_str(param.param_type)
-                    param_desc = self._transform_text(
-                        param.description, FunctionResolver(cls, func_name), module
-                    )
-                    w.print(
-                        f"* **{safe_name(param_name)}** ({param_type}) - {param_desc}"
-                    )
+                    param_desc = self._transform_text(param.description, FunctionResolver(cls, func_name), module)
+                    w.print(f"* **{safe_name(param_name)}** ({param_type}) - {param_desc}")
                 w.print()
 
     def _generate_class(self, cls: type, w: MarkdownWriter) -> None:
@@ -539,9 +357,7 @@ class MarkdownGenerator:
 
         self._generate_functions(cls, w)
 
-    def _generate_dataclass(
-        self, cls: type[DataclassInstance], w: MarkdownWriter
-    ) -> None:
+    def _generate_dataclass(self, cls: type[DataclassInstance], w: MarkdownWriter) -> None:
         self._generate_bases(cls, w)
 
         module = sys.modules[cls.__module__]
@@ -563,9 +379,7 @@ class MarkdownGenerator:
             )
             for name, param in docstring.params.items():
                 param_type = fmt.python_type_to_str(param.param_type)
-                param_desc = self._transform_text(
-                    param.description, MemberResolver(cls, name), module
-                )
+                param_desc = self._transform_text(param.description, MemberResolver(cls, name), module)
                 w.print(f"* **{safe_name(name)}** ({param_type}) - {param_desc}")
             w.print()
 
@@ -573,16 +387,14 @@ class MarkdownGenerator:
 
     def _generate_module(self, module: ModuleType, target: Path) -> None:
         w = MarkdownWriter()
-        w.print(f"# {module.__name__} {module_anchor(module)}")
+        w.print(f"# {self._heading_anchor(module_anchor(module), module.__name__)}")
         w.print()
         if module.__doc__:
-            w.print(
-                self._transform_text(module.__doc__, ModuleResolver(module), module)
-            )
+            w.print(self._transform_text(module.__doc__, ModuleResolver(module), module))
             w.print()
 
         for cls in get_module_classes(module):
-            w.print(f"## {safe_name(cls.__name__)} {class_anchor(cls)}")
+            w.print(f"## {self._heading_anchor(class_anchor(cls), safe_name(cls.__name__), )}")
             w.print()
 
             if is_dataclass_type(cls):

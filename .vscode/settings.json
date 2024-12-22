@@ -13,5 +13,11 @@
         },
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "charliermarsh.ruff"
-    }
+    },
+    "cSpell.words": [
+        "GITBOOK",
+        "Hunyadi",
+        "Levente"
+    ],
+    "ruff.lineLength": 160
 }

@@ -250,8 +250,8 @@ def send_message(
 if __name__ == "__main__":
     from pathlib import Path
 
-    from markdown_doc.generator import MarkdownGenerator
+    from markdown_doc.generator import MarkdownAnchorStyle, MarkdownGenerator, MarkdownOptions
 
-    MarkdownGenerator([sys.modules[__name__]]).generate(
+    MarkdownGenerator([sys.modules[__name__]], options=MarkdownOptions(anchor_style=MarkdownAnchorStyle.GITBOOK)).generate(
         Path(__file__).parent.parent / "output"
     )
