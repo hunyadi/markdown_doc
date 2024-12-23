@@ -27,7 +27,7 @@ class EnumValue:
     def __str__(self) -> str:
         return str(self.enum_value.value)
 
-    def __eq__(self, operand: object):
+    def __eq__(self, operand: object) -> bool:
         if not isinstance(operand, EnumValue):
             return False
         return operand.enum_value is self.enum_value
@@ -38,9 +38,9 @@ class EnumConverter:
 
     action: argparse.Action
     enum_type: type[enum.Enum]
-    enum_values: dict[str, enum.Enum]
+    enum_values: dict[str, EnumValue]
 
-    def __init__(self, action: argparse.Action, enum_type: type[enum.Enum]):
+    def __init__(self, action: argparse.Action, enum_type: type[enum.Enum]) -> None:
         self.action = action
         self.enum_type = enum_type
         self.enum_values = {}
@@ -52,7 +52,7 @@ class EnumConverter:
                 raise KeyError(f"enumeration `{enum_type.__name__}` has a duplicate value {repr(enum_value)} with a case-insensitive match")
             self.enum_values[enum_value] = EnumValue(member)
 
-    def __call__(self, value: str):
+    def __call__(self, value: str) -> EnumValue:
         enum_value = self.enum_values.get(value.lower())
         if enum_value is None:
             args = ", ".join(f"'{e.value}'" for e in self.enum_type)
@@ -61,6 +61,12 @@ class EnumConverter:
 
 
 class _EnumAction(argparse.Action):
+    """
+    Accepts enumeration values with a case-insensitive match.
+
+    This class is instantiated indirectly via `EnumAction`.
+    """
+
     def __init__(
         self,
         enum_type: type[enum.Enum],
@@ -75,6 +81,10 @@ class _EnumAction(argparse.Action):
         help: str | None = None,
         metavar: str | tuple[str, ...] | None = None,
     ):
+        """
+        Invoked by :cls:`argparse.ArgumentParser` to create an :cls:`argparse.Action`.
+        """
+
         if const is not None and not isinstance(const, enum.Enum):
             raise TypeError("expected: instance of type `enum.Enum` for argument `const`")
         if default is not None and not isinstance(default, enum.Enum):
@@ -101,10 +111,14 @@ class _EnumAction(argparse.Action):
         self,
         parser: argparse.ArgumentParser,
         namespace: argparse.Namespace,
-        values: EnumValue | list[EnumValue],
+        values: str | Sequence[Any] | None,
         option_string: str | None = None,
     ) -> None:
-        if isinstance(values, list):
+        """
+        Invoked by :cls:`argparse.ArgumentParser` to apply the action to a command-line argument.
+        """
+
+        if isinstance(values, Sequence):
             for value in values:
                 if not isinstance(value, EnumValue):
                     raise TypeError(f"expected: instance of `{EnumValue.__name__}`; got: `{type(value).__name__}`")
@@ -116,9 +130,19 @@ class _EnumAction(argparse.Action):
 
 
 class EnumAction:
+    """
+    Accepts enumeration values with a case-insensitive match.
+    """
+
     enum_type: type[enum.Enum]
 
     def __init__(self, enum_type: type[enum.Enum]):
+        """
+        Creates an object to be passed to `argparse.ArgumentParser.add_argument`.
+
+        :param enum_type: The enumeration type to create the action for.
+        """
+
         if not issubclass(enum_type, enum.Enum):
             raise TypeError("expected: enumeration type")
 

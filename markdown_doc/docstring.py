@@ -40,6 +40,22 @@ def enum_labels(cls: type[Enum]) -> dict[str, str]:
     """
     Maps enumeration member names to their follow-up description.
 
+    Python's own doc-string mechanism doesn't allow attaching a description to enumeration members. However,
+    documentation toolchains such as Sphinx's `autodoc` support this with a string literal immediately following
+    the enumeration member value assignment:
+
+    ```
+    @enum.unique
+    class EnumType(enum.Enum):
+        enabled = "enabled"
+        "Documents the enumeration member `enabled`."
+
+        disabled = "disabled"
+        "Documents the enumeration member `disabled`."
+    ```
+
+    This function parses source code with Python's `ast` module to extract these description text strings.
+
     :param cls: An enumeration class type.
     :returns: Maps enumeration names to their description (if present).
     """

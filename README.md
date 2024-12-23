@@ -1,14 +1,15 @@
 # Generate Markdown documentation from Python code
 
-This library generates Markdown documentation directly from Python code, making heavy use of Python type annotations.
+This library generates Markdown documentation directly from Python code, utilizing Python type annotations.
 
 ## Features at a glance
 
 * Each module produces a Markdown file.
 * [Documentation strings](https://docs.python.org/3/library/stdtypes.html#definition.__doc__) are extracted from module, class, enumeration and function definitions.
-* Cross-references may be local or fully-qualified, and work across modules.
+* Cross-references may be local or fully qualified, and work across modules.
+* Classes with member variable declarations produce member documentation.
 * Data-class field descriptions are validated if they have a matching member variable declaration.
-* All enumeration members are published, even if they lack a description.
+* Enumeration members are published, even if they lack a description.
 * Magic methods (e.g. `__eq__`) are published if they have a doc-string.
 * Multi-line code blocks in doc-strings are retained as Markdown code blocks.
 * Forward-references and type annotations as strings are automatically evaluated.
@@ -27,7 +28,7 @@ class SampleClass:
     """
 ```
 
-Data-class field descriptions are defined with `:param ...:`:
+Class member variable and data-class field descriptions are defined with `:param ...:`:
 
 ```python
 @dataclass
@@ -70,17 +71,20 @@ MarkdownGenerator([module1, module2, module3]).generate(out_dir)
 
 ```
 $ python3 -m markdown_doc --help
-usage: markdown_doc [-h] [-o OUT_DIR] module [module ...]
+usage: markdown_doc [-h] [-d [DIRECTORY ...]] [-m [MODULE ...]] [-o OUT_DIR] [--anchor-style {GitBook,GitHub}]
 
 Generates Markdown documentation from Python code
 
-positional arguments:
-  module                Python module(s) to scan for signatures and doc-strings
-
 options:
   -h, --help            show this help message and exit
+  -d [DIRECTORY ...], --directory [DIRECTORY ...]
+                        folder(s) to recurse into when looking for modules
+  -m [MODULE ...], --module [MODULE ...]
+                        qualified names(s) of Python module(s) to scan
   -o OUT_DIR, --out-dir OUT_DIR
                         output directory
+  --anchor-style {GitBook,GitHub}
+                        output format for generating anchors in headings
 ```
 
 ## Related work

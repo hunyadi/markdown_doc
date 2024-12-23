@@ -9,7 +9,7 @@ Copyright 2024, Levente Hunyadi
 import abc
 import sys
 import typing
-from types import FunctionType, ModuleType
+from types import FunctionType, MethodType, ModuleType
 
 
 class ResolverError(RuntimeError):
@@ -74,7 +74,7 @@ class ModuleFunctionResolver(ModuleResolver):
 
     def __init__(self, function: FunctionType):
         super().__init__(sys.modules[function.__module__])
-        self.function = function
+        self.function = function  # type: ignore
 
     def evaluate(self, ref: str) -> type:
         obj = self._evaluate(ref)
@@ -143,9 +143,9 @@ class MemberResolver(ClassResolver):
 class MemberFunctionResolver(ClassResolver):
     "A resolver that operates within the context of a member function of a class."
 
-    function: FunctionType
+    function: MethodType
 
-    def __init__(self, cls: type, function: FunctionType):
+    def __init__(self, cls: type, function: MethodType):
         super().__init__(cls)
         self.function = function
 
