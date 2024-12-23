@@ -9,7 +9,7 @@ Copyright 2024, Levente Hunyadi
 import abc
 import sys
 import typing
-from types import ModuleType
+from types import FunctionType, ModuleType
 
 
 class ResolverError(RuntimeError):
@@ -65,6 +65,23 @@ class ModuleResolver(Resolver):
             return obj
 
         raise ResolverError(f"`{ref}` is not defined in the context of module `{self.module.__name__}`")
+
+
+class ModuleFunctionResolver(ModuleResolver):
+    "A resolver that operates within the context of a module-level function."
+
+    function: FunctionType
+
+    def __init__(self, function: FunctionType):
+        super().__init__(sys.modules[function.__module__])
+        self.function = function
+
+    def evaluate(self, ref: str) -> type:
+        obj = self._evaluate(ref)
+        if obj is not None:
+            return obj
+
+        raise ResolverError(f"`{ref}` is not defined in the context of function `{self.function.__name__}` in module `{self.function.__module__}`")
 
 
 class ClassResolver(Resolver):
@@ -123,14 +140,14 @@ class MemberResolver(ClassResolver):
         )
 
 
-class FunctionResolver(ClassResolver):
+class MemberFunctionResolver(ClassResolver):
     "A resolver that operates within the context of a member function of a class."
 
-    func_name: str
+    function: FunctionType
 
-    def __init__(self, cls: type, func_name: str):
+    def __init__(self, cls: type, function: FunctionType):
         super().__init__(cls)
-        self.func_name = func_name
+        self.function = function
 
     def evaluate(self, ref: str) -> type:
         obj = self._evaluate(ref)
@@ -138,5 +155,5 @@ class FunctionResolver(ClassResolver):
             return obj
 
         raise ResolverError(
-            f"`{ref}` is not defined in the context of function `{self.func_name}` in class `{self.cls.__name__}` in module `{self.cls.__module__}`"
+            f"`{ref}` is not defined in the context of function `{self.function.__name__}` in class `{self.cls.__name__}` in module `{self.cls.__module__}`"
         )

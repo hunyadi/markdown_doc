@@ -18,11 +18,11 @@ from pathlib import Path
 from types import FunctionType, ModuleType
 
 from strong_typing.docstring import check_docstring, parse_type
-from strong_typing.inspection import DataclassInstance, get_module_classes, is_dataclass_type, is_type_enum
+from strong_typing.inspection import DataclassInstance, get_module_classes, get_module_functions, is_dataclass_type, is_type_enum
 from strong_typing.name import TypeFormatter
 
 from .docstring import enum_labels
-from .resolver import ClassResolver, FunctionResolver, MemberResolver, ModuleResolver, Resolver
+from .resolver import ClassResolver, MemberFunctionResolver, MemberResolver, ModuleFunctionResolver, ModuleResolver, Resolver
 
 
 def replace_links(text: str) -> str:
@@ -117,6 +117,13 @@ def safe_id(name: str) -> str:
 
 
 def module_path(target: str, source: str) -> str:
+    """
+    Returns a relative path from source to target.
+
+    :param target: The fully qualified name of the module to link to (in dot notation).
+    :param source: The fully qualified name of the module to link from (in dot notation).
+    """
+
     target_path = Path("/" + target.replace(".", "/") + ".md")
     source_path = Path("/" + source.replace(".", "/") + ".md")
     target_dir = target_path.parent
@@ -302,50 +309,67 @@ class MarkdownGenerator:
             w.print(f"**Bases:** {', '.join(self._class_link(b, module) for b in bases)}")
             w.print()
 
-    def _generate_functions(self, cls: type, w: MarkdownWriter) -> None:
-        module = sys.modules[cls.__module__]
+    def _generate_function(self, function: FunctionType, signature_resolver: Resolver, param_resolver: Resolver, fmt: TypeFormatter, w: MarkdownWriter) -> None:
+        "Writes Markdown output for a single Python function."
 
+        module = sys.modules[function.__module__]
+        docstring = parse_type(function)
+
+        description = docstring.full_description
+        if not description:
+            return
+
+        signature = inspect.signature(function)
+        func_params: list[str] = []
+        for param_name, param in signature.parameters.items():
+            if param.annotation is not inspect.Signature.empty:
+                param_type = fmt.python_type_to_str(param.annotation)
+                func_params.append(f"{param_name}: {param_type}")
+            else:
+                func_params.append(param_name)
+        param_list = ", ".join(func_params)
+        if signature.return_annotation is not inspect.Signature.empty:
+            function_returns = fmt.python_type_to_str(signature.return_annotation)
+            returns = f" → {function_returns}"
+        else:
+            returns = ""
+        title = f"{safe_name(function.__name__)} ( {param_list} ){returns}"
+        w.print(f"### {self._heading_anchor(class_anchor(function), title)}")
+        w.print()
+
+        w.print(self._transform_text(description, signature_resolver, module))
+        w.print()
+
+        if docstring.params:
+            w.print("**Parameters:**")
+            w.print()
+
+            for param_name, param in docstring.params.items():
+                param_item = f"**{safe_name(param_name)}**"
+                param_desc = self._transform_text(param.description, param_resolver, module)
+                if param.param_type is not inspect.Signature.empty:
+                    param_type = fmt.python_type_to_str(param.param_type)
+                    w.print(f"* {param_item} ({param_type}) - {param_desc}")
+                else:
+                    w.print(f"* {param_item} - {param_desc}")
+            w.print()
+
+    def _generate_functions(self, cls: type, w: MarkdownWriter) -> None:
+        "Writes Markdown output for Python member functions in a class."
+
+        module = sys.modules[cls.__module__]
         fmt = TypeFormatter(
             context=module,
             type_transform=lambda c: self._class_link(c, module),
             use_union_operator=True,
         )
 
-        for func_name, func in inspect.getmembers(cls, lambda f: inspect.isfunction(f)):
-            docstring = parse_type(func)
-
-            description = docstring.full_description
-            if not description:
-                continue
-
-            func_params: list[str] = []
-            for param in docstring.params.values():
-                param_type = fmt.python_type_to_str(param.param_type)
-                func_params.append(f"{param.name}: {param_type}")
-            param_list = ", ".join(func_params)
-            if docstring.returns:
-                func_returns = fmt.python_type_to_str(docstring.returns.return_type)
-                returns = f" → {func_returns}"
-            else:
-                returns = ""
-            title = f"{safe_name(func_name)} ( {param_list} ){returns}"
-            w.print(f"### {self._heading_anchor(class_anchor(func), title)}")
-            w.print()
-
-            w.print(self._transform_text(description, ClassResolver(cls), module))
-            w.print()
-
-            if docstring.params:
-                w.print("**Parameters:**")
-                w.print()
-
-                for param_name, param in docstring.params.items():
-                    param_type = fmt.python_type_to_str(param.param_type)
-                    param_desc = self._transform_text(param.description, FunctionResolver(cls, func_name), module)
-                    w.print(f"* **{safe_name(param_name)}** ({param_type}) - {param_desc}")
-                w.print()
+        for _, func in inspect.getmembers(cls, lambda f: inspect.isfunction(f)):
+            self._generate_function(func, ClassResolver(cls), MemberFunctionResolver(cls, func), fmt, w)
 
     def _generate_class(self, cls: type, w: MarkdownWriter) -> None:
+        "Writes Markdown output for a single (regular) Python class."
+
         self._generate_bases(cls, w)
 
         module = sys.modules[cls.__module__]
@@ -358,6 +382,8 @@ class MarkdownGenerator:
         self._generate_functions(cls, w)
 
     def _generate_dataclass(self, cls: type[DataclassInstance], w: MarkdownWriter) -> None:
+        "Writes Markdown output for a single Python data-class."
+
         self._generate_bases(cls, w)
 
         module = sys.modules[cls.__module__]
@@ -386,6 +412,8 @@ class MarkdownGenerator:
         self._generate_functions(cls, w)
 
     def _generate_module(self, module: ModuleType, target: Path) -> None:
+        "Writes Markdown output for a single Python module."
+
         w = MarkdownWriter()
         w.print(f"# {self._heading_anchor(module_anchor(module), module.__name__)}")
         w.print()
@@ -394,7 +422,7 @@ class MarkdownGenerator:
             w.print()
 
         for cls in get_module_classes(module):
-            w.print(f"## {self._heading_anchor(class_anchor(cls), safe_name(cls.__name__), )}")
+            w.print(f"## {self._heading_anchor(class_anchor(cls), safe_name(cls.__name__))}")
             w.print()
 
             if is_dataclass_type(cls):
@@ -404,10 +432,27 @@ class MarkdownGenerator:
             elif isinstance(cls, type):
                 self._generate_class(cls, w)
 
+        # generate top-level module functions
+        fmt = TypeFormatter(
+            context=module,
+            type_transform=lambda c: self._class_link(c, module),
+            use_union_operator=True,
+        )
+        functions = get_module_functions(module)
+        if functions:
+            anchor = f"{safe_id(module.__name__)}-functions"
+            w.print(f"## {self._heading_anchor(anchor, "Functions")}")
+            w.print()
+
+            for func in functions:
+                self._generate_function(func, ModuleResolver(module), ModuleFunctionResolver(func), fmt, w)
+
         with open(target, "w", encoding="utf-8") as f:
             f.write("\n".join(w.lines))
 
     def generate(self, target: Path) -> None:
+        "Writes Markdown files to a target directory."
+
         for module in self.modules:
             module_path = module.__name__.replace(".", "/") + ".md"
             path = target / Path(module_path)

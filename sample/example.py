@@ -91,7 +91,11 @@ class SampleClass:
     enumeration: EnumType
 
     def __lt__(self, other: "SampleClass") -> bool:
-        "A custom implementation for *less than*."
+        """
+        A custom implementation for *less than*.
+
+        :param other: A reference to :class:`SampleClass`.
+        """
 
         return self.integer < other.integer
 
@@ -238,6 +242,10 @@ def send_message(
     priority: int = 1,
 ) -> int:
     """
+    Sends a message.
+
+    This function is in the same module as :class:`SampleClass` and :class:`DerivedClass`.
+
     :param sender: The person sending the message.
     :param recipient: The recipient of the message.
     :param message_body: The body of the message.
