@@ -184,7 +184,7 @@ def function_anchor(cls: FunctionType) -> str:
     return safe_id(f"{cls.__module__}.{cls.__qualname__}")
 
 
-def is_private(cls: type) -> bool:
+def is_private(cls: type | FunctionType) -> bool:
     return cls.__name__.startswith("_") and not cls.__name__.startswith("__")
 
 
@@ -354,7 +354,14 @@ class MarkdownGenerator:
             w.print(f"**Bases:** {', '.join(self._class_link(b, module) for b in bases)}")
             w.print()
 
-    def _generate_function(self, function: FunctionType, signature_resolver: Resolver, param_resolver: Resolver, fmt: TypeFormatter, w: MarkdownWriter) -> None:
+    def _generate_function(
+        self,
+        function: FunctionType,
+        signature_resolver: Resolver,
+        param_resolver: Resolver,
+        fmt: TypeFormatter,
+        w: MarkdownWriter,
+    ) -> None:
         "Writes Markdown output for a single Python function."
 
         module = sys.modules[function.__module__]
@@ -494,7 +501,8 @@ class MarkdownGenerator:
             functions = [fn for fn in functions if not is_private(fn)]
         if functions:
             anchor = f"{safe_id(module.__name__)}-functions"
-            w.print(f"## {self._heading_anchor(anchor, "Functions")}")
+            anchored_title = self._heading_anchor(anchor, "Functions")
+            w.print(f"## {anchored_title}")
             w.print()
 
             for func in functions:
@@ -511,3 +519,12 @@ class MarkdownGenerator:
             path = target / Path(module_path)
             os.makedirs(path.parent, exist_ok=True)
             self._generate_module(module, path)
+
+
+def generate_markdown(modules: list[ModuleType], out_dir: Path, *, options: MarkdownOptions | None = None) -> None:
+    if not modules:
+        raise ValueError("no Python module given")
+    if options is None:
+        options = MarkdownOptions()
+
+    MarkdownGenerator(modules, options=options).generate(out_dir)

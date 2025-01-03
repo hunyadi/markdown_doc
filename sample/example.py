@@ -260,6 +260,7 @@ if __name__ == "__main__":
 
     from markdown_doc.generator import MarkdownAnchorStyle, MarkdownGenerator, MarkdownOptions
 
-    MarkdownGenerator([sys.modules[__name__]], options=MarkdownOptions(anchor_style=MarkdownAnchorStyle.GITBOOK)).generate(
-        Path(__file__).parent.parent / "output"
-    )
+    MarkdownGenerator(
+        [sys.modules[__name__]],
+        options=MarkdownOptions(anchor_style=MarkdownAnchorStyle.GITBOOK),
+    ).generate(Path(__file__).parent.parent / "docs")

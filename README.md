@@ -71,7 +71,7 @@ MarkdownGenerator([module1, module2, module3]).generate(out_dir)
 
 ```
 $ python3 -m markdown_doc --help
-usage: markdown_doc [-h] [-d [DIRECTORY ...]] [-m [MODULE ...]] [-o OUT_DIR] [--anchor-style {GitBook,GitHub}]
+usage: markdown_doc [-h] [-d [DIRECTORY ...]] [-m [MODULE ...]] [-r ROOT_DIR] [-o OUT_DIR] [--anchor-style {GitBook,GitHub}]
 
 Generates Markdown documentation from Python code
 
@@ -81,8 +81,10 @@ options:
                         folder(s) to recurse into when looking for modules
   -m [MODULE ...], --module [MODULE ...]
                         qualified names(s) of Python module(s) to scan
+  -r ROOT_DIR, --root-dir ROOT_DIR
+                        path to act as root for converting directory paths into qualified module names (default: working directory)
   -o OUT_DIR, --out-dir OUT_DIR
-                        output directory
+                        output directory (default: 'docs' in working directory)
   --anchor-style {GitBook,GitHub}
                         output format for generating anchors in headings
 ```
