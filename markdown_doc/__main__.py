@@ -35,12 +35,14 @@ parser.add_argument(
     "-d",
     "--directory",
     type=Path,
+    action="extend",
     nargs="*",
     help="folder(s) to recurse into when looking for modules",
 )
 parser.add_argument(
     "-m",
     "--module",
+    action="extend",
     nargs="*",
     help="qualified names(s) of Python module(s) to scan",
 )
