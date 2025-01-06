@@ -375,14 +375,20 @@ class MarkdownGenerator:
         func_params: list[str] = []
         for param_name, param in signature.parameters.items():
             if param.annotation is not inspect.Signature.empty:
-                param_type = fmt.python_type_to_str(param.annotation)
-                func_params.append(f"{param_name}: {param_type}")
+                try:
+                    param_type = fmt.python_type_to_str(param.annotation)
+                    func_params.append(f"{param_name}: {param_type}")
+                except AttributeError:
+                    func_params.append(param_name)
             else:
                 func_params.append(param_name)
         param_list = ", ".join(func_params)
         if signature.return_annotation is not inspect.Signature.empty:
-            function_returns = fmt.python_type_to_str(signature.return_annotation)
-            returns = f" → {function_returns}"
+            try:
+                function_returns = fmt.python_type_to_str(signature.return_annotation)
+                returns = f" → {function_returns}"
+            except AttributeError:
+                returns = ""
         else:
             returns = ""
         title = f"{safe_name(function.__name__)} ( {param_list} ){returns}"
@@ -400,8 +406,11 @@ class MarkdownGenerator:
                 param_item = f"**{safe_name(param_name)}**"
                 param_desc = self._transform_text(docstring_param.description, param_resolver, module)
                 if docstring_param.param_type is not inspect.Signature.empty:
-                    param_type = fmt.python_type_to_str(docstring_param.param_type)
-                    w.print(f"* {param_item} ({param_type}) - {param_desc}")
+                    try:
+                        param_type = fmt.python_type_to_str(docstring_param.param_type)
+                        w.print(f"* {param_item} ({param_type}) - {param_desc}")
+                    except AttributeError:
+                        w.print(f"* {param_item} - {param_desc}")
                 else:
                     w.print(f"* {param_item} - {param_desc}")
             w.print()
