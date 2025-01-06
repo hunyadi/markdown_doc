@@ -235,6 +235,19 @@ class EntityTable:
     unique_key: str
 
 
+class Skipped:
+    """
+    This class is not documented when the appropriate predicate is passed to the generator.
+
+    Pass the following predicate to have this class ignored when generating documentation:
+    ```
+    lambda cls: getattr(cls, "ignore", None) is not True
+    ```
+    """
+
+    ignore = True
+
+
 def send_message(
     sender: str,
     recipient: str,
@@ -263,4 +276,5 @@ if __name__ == "__main__":
     MarkdownGenerator(
         [sys.modules[__name__]],
         options=MarkdownOptions(anchor_style=MarkdownAnchorStyle.GITBOOK),
+        predicate=lambda cls: getattr(cls, "ignore", None) is not True,
     ).generate(Path(__file__).parent.parent / "docs")

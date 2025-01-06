@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import FunctionType, ModuleType
+from typing import Callable
 
 from strong_typing.docstring import check_docstring, parse_type
 from strong_typing.inspection import DataclassInstance, get_module_classes, get_module_functions, is_dataclass_type, is_type_enum
@@ -184,7 +185,10 @@ def function_anchor(cls: FunctionType) -> str:
     return safe_id(f"{cls.__module__}.{cls.__qualname__}")
 
 
-def is_private(cls: type | FunctionType) -> bool:
+ObjectType = type | FunctionType
+
+
+def is_private(cls: ObjectType) -> bool:
     return cls.__name__.startswith("_") and not cls.__name__.startswith("__")
 
 
@@ -234,10 +238,19 @@ class MarkdownGenerator:
 
     modules: list[ModuleType]
     options: MarkdownOptions
+    predicate: Callable[[ObjectType], bool] | None
 
-    def __init__(self, modules: list[ModuleType], *, options: MarkdownOptions | None = None) -> None:
+    def __init__(self, modules: list[ModuleType], *, options: MarkdownOptions | None = None, predicate: Callable[[ObjectType], bool] | None = None) -> None:
+        """
+        Instantiates a Markdown generator object.
+
+        :param options: Options for generating Markdown output.
+        :param predicate: If given, only those classes and functions are processed for which the predicate returns `True`.
+        """
+
         self.modules = modules
         self.options = options if options is not None else MarkdownOptions()
+        self.predicate = predicate
 
     def _heading_anchor(self, anchor: str, text: str) -> str:
         """
@@ -375,20 +388,14 @@ class MarkdownGenerator:
         func_params: list[str] = []
         for param_name, param in signature.parameters.items():
             if param.annotation is not inspect.Signature.empty:
-                try:
-                    param_type = fmt.python_type_to_str(param.annotation)
-                    func_params.append(f"{param_name}: {param_type}")
-                except AttributeError:
-                    func_params.append(param_name)
+                param_type = fmt.python_type_to_str(param.annotation)
+                func_params.append(f"{param_name}: {param_type}")
             else:
                 func_params.append(param_name)
         param_list = ", ".join(func_params)
         if signature.return_annotation is not inspect.Signature.empty:
-            try:
-                function_returns = fmt.python_type_to_str(signature.return_annotation)
-                returns = f" → {function_returns}"
-            except AttributeError:
-                returns = ""
+            function_returns = fmt.python_type_to_str(signature.return_annotation)
+            returns = f" → {function_returns}"
         else:
             returns = ""
         title = f"{safe_name(function.__name__)} ( {param_list} ){returns}"
@@ -406,11 +413,8 @@ class MarkdownGenerator:
                 param_item = f"**{safe_name(param_name)}**"
                 param_desc = self._transform_text(docstring_param.description, param_resolver, module)
                 if docstring_param.param_type is not inspect.Signature.empty:
-                    try:
-                        param_type = fmt.python_type_to_str(docstring_param.param_type)
-                        w.print(f"* {param_item} ({param_type}) - {param_desc}")
-                    except AttributeError:
-                        w.print(f"* {param_item} - {param_desc}")
+                    param_type = fmt.python_type_to_str(docstring_param.param_type)
+                    w.print(f"* {param_item} ({param_type}) - {param_desc}")
                 else:
                     w.print(f"* {param_item} - {param_desc}")
             w.print()
@@ -487,6 +491,9 @@ class MarkdownGenerator:
 
         for cls in get_module_classes(module):
             if not self.options.include_private and is_private(cls):
+                continue
+
+            if self.predicate is not None and not self.predicate(cls):
                 continue
 
             w.print(f"## {self._heading_anchor(class_anchor(cls), safe_name(cls.__name__))}")

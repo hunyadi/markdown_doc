@@ -1,1 +1,4 @@
-json_strong_typing
+json_strong_typing >= 0.3.6
+
+mypy
+flake8
