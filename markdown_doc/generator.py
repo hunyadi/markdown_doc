@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import FunctionType, ModuleType
-from typing import Callable
+from typing import Any, Callable
 
 from strong_typing.docstring import check_docstring, parse_type
 from strong_typing.inspection import DataclassInstance, get_module_classes, get_module_functions, is_dataclass_type, is_type_enum
@@ -231,6 +231,20 @@ class MarkdownOptions:
 
     anchor_style: MarkdownAnchorStyle = MarkdownAnchorStyle.GITHUB
     include_private: bool = False
+
+
+class ProcessingError(RuntimeError):
+    """
+    Raised when inspecting a class or function fails.
+
+    :param obj: The class or function object that triggered the error.
+    """
+
+    obj: type
+
+    def __init__(self, *args: Any, obj: type) -> None:
+        super().__init__(*args)
+        self.obj = obj
 
 
 class MarkdownGenerator:
@@ -499,12 +513,15 @@ class MarkdownGenerator:
             w.print(f"## {self._heading_anchor(class_anchor(cls), safe_name(cls.__name__))}")
             w.print()
 
-            if is_dataclass_type(cls):
-                self._generate_dataclass(cls, w)
-            elif is_type_enum(cls):
-                self._generate_enum(cls, w)
-            elif isinstance(cls, type):
-                self._generate_class(cls, w)
+            try:
+                if is_dataclass_type(cls):
+                    self._generate_dataclass(cls, w)
+                elif is_type_enum(cls):
+                    self._generate_enum(cls, w)
+                elif isinstance(cls, type):
+                    self._generate_class(cls, w)
+            except Exception as e:
+                raise ProcessingError(f"error while processing type `{cls.__name__}` in module `{module.__name__}`", obj=cls) from e
 
         # generate top-level module functions
         fmt = TypeFormatter(
