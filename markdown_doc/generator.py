@@ -447,6 +447,7 @@ class MarkdownGenerator:
         fmt = TypeFormatter(
             context=module,
             type_transform=lambda c: self._class_link(c, module),
+            value_transform=lambda v: f"`{v!r}`",
             use_union_operator=True,
         )
 
@@ -490,6 +491,7 @@ class MarkdownGenerator:
             fmt = TypeFormatter(
                 context=module,
                 type_transform=lambda c: self._class_link(c, module),
+                value_transform=lambda v: f"`{v!r}`",
                 use_union_operator=True,
             )
             for name, docstring_param in docstring.params.items():
@@ -534,6 +536,7 @@ class MarkdownGenerator:
         fmt = TypeFormatter(
             context=module,
             type_transform=lambda c: self._class_link(c, module),
+            value_transform=lambda v: f"`{v!r}`",
             use_union_operator=True,
         )
         functions = get_module_functions(module)

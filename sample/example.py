@@ -7,7 +7,7 @@ import sys
 import typing
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 from strong_typing.auxiliary import int8, int16, uint32, uint64
 from strong_typing.core import JsonType, Schema
@@ -202,6 +202,21 @@ class FixedWidthIntegers:
     integer16: int16
     unsigned32: uint32
     unsigned64: uint64
+
+
+@dataclass
+class LiteralValues:
+    """
+    A data-class with members whose value is one of the pre-defined constants.
+
+    :param boolean: A member variable that assumes constants of type `bool`.
+    :param integer: A member variable that assumes constants of type `int`.
+    :param string: A member variable that assumes constants of type `float`.
+    """
+
+    boolean: Literal[True, False]
+    integer: Literal[1, 2, 3]
+    string: Literal["a", "b", "c"]
 
 
 @dataclass
