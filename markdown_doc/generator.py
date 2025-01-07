@@ -27,6 +27,13 @@ from .resolver import ClassResolver, MemberFunctionResolver, MemberResolver, Mod
 
 
 def replace_links(text: str) -> str:
+    """
+    Replaces plain text URLs with Markdown links.
+
+    :param text: String with possible occurrences of URLs.
+    :returns: String with replacements made.
+    """
+
     regex = re.compile(
         r"""
         \b
@@ -103,6 +110,18 @@ def replace_links(text: str) -> str:
     return text
 
 
+def quote_value(value: Any) -> str:
+    "Renders a value as Markdown preformatted text."
+
+    s = repr(value)
+    if "`" not in s:
+        return f"`{s}`"
+    elif "``" not in s:
+        return f"``{s}``"
+    else:
+        return f"```{s}```"
+
+
 def safe_name(name: str) -> str:
     "Object name with those characters escaped that are allowed in Python identifiers but have special meaning in Markdown."
 
@@ -120,7 +139,15 @@ def _safe_id_part(part: str) -> str:
 
 
 def safe_id(name: str) -> str:
-    "Object identifier that qualifies as a Markdown anchor."
+    """
+    Object identifier that qualifies as a Markdown anchor.
+
+    The generated identifier is used as an anchor for Markdown links.
+
+    Usually, the identifier matches the class or function name. However, objects with private visibility have a name
+    that begins with `_`, and the name of special methods starts with `__`, both of which confuses many Markdown
+    formatting engines. We take a safe approach to prefix these with `p` and `sp`, respectively.
+    """
 
     parts = name.split(".")
     return ".".join(_safe_id_part(part) for part in parts)
@@ -148,22 +175,28 @@ def module_path(target: str, source: str) -> str:
 def module_anchor(module: ModuleType) -> str:
     "Module anchor within a Markdown file."
 
+    assert isinstance(module, ModuleType), "expected: module reference"
     return safe_id(module.__name__)
 
 
 def module_link(module: ModuleType, context: ModuleType) -> str:
     "Markdown link with a fully-qualified module reference."
 
+    assert isinstance(module, ModuleType), "expected: module reference"
     return f"[{module.__name__}]({module_path(module.__name__, context.__name__)}#{safe_id(module.__name__)})"
 
 
 def class_anchor(cls: type) -> str:
     "Class function anchor within a Markdown file."
 
+    assert not isinstance(cls, ModuleType) and not isinstance(cls, FunctionType), "expected: class reference"
     return safe_id(f"{cls.__module__}.{cls.__qualname__}")
 
 
-def class_link(cls: type, context: ModuleType) -> str:
+ObjectType = type | FunctionType
+
+
+def _class_link(cls: ObjectType, context: ModuleType) -> str:
     "Markdown link with a partially- or fully-qualified class or function reference."
 
     qualname = f"{cls.__module__}.{cls.__qualname__}"
@@ -179,16 +212,30 @@ def class_link(cls: type, context: ModuleType) -> str:
     return f"[{safe_name(cls.__name__)}]({link})"
 
 
-def function_anchor(cls: FunctionType) -> str:
+def class_link(cls: type, context: ModuleType) -> str:
+    "Markdown link with a partially- or fully-qualified class reference."
+
+    assert not isinstance(cls, ModuleType) and not isinstance(cls, FunctionType), "expected: class reference"
+    return _class_link(cls, context)
+
+
+def function_anchor(fn: FunctionType) -> str:
     "Function anchor within a Markdown file."
 
-    return safe_id(f"{cls.__module__}.{cls.__qualname__}")
+    assert isinstance(fn, FunctionType), "expected: function reference"
+    return safe_id(f"{fn.__module__}.{fn.__qualname__}")
 
 
-ObjectType = type | FunctionType
+def function_link(fn: FunctionType, context: ModuleType) -> str:
+    "Markdown link with a partially- or fully-qualified function reference."
+
+    assert isinstance(fn, FunctionType), "expected: function reference"
+    return _class_link(fn, context)
 
 
 def is_private(cls: ObjectType) -> bool:
+    "True if the class or function is private to the module."
+
     return cls.__name__.startswith("_") and not cls.__name__.startswith("__")
 
 
@@ -305,6 +352,15 @@ class MarkdownGenerator:
         else:
             return safe_name(cls.__name__)
 
+    def _function_link(self, fn: FunctionType, context: ModuleType) -> str:
+        "Creates a link to a function if it is part of the exported batch."
+
+        module = sys.modules[fn.__module__]
+        if module in self.modules:
+            return function_link(fn, context)
+        else:
+            return safe_name(fn.__name__)
+
     def _replace_refs(self, text: str, resolver: Resolver, context: ModuleType) -> str:
         "Replaces references in module, class or parameter doc-string text."
 
@@ -327,7 +383,7 @@ class MarkdownGenerator:
             obj = resolver.evaluate(ref)
             if not isinstance(obj, FunctionType):
                 raise ValueError(f"expected: function reference; got: {obj} of type {type(obj)}")
-            return self._class_link(obj, context)
+            return self._function_link(obj, context)
 
         regex = re.compile(r":mod:`([^`]+)`")
         text = regex.sub(_replace_module_ref, text)
@@ -355,6 +411,8 @@ class MarkdownGenerator:
         return text
 
     def _generate_enum(self, cls: type[Enum], w: MarkdownWriter) -> None:
+        "Writes Markdown output for a single Python enumeration class with all enumeration members."
+
         module = sys.modules[cls.__module__]
         docstring = parse_type(cls)
         description = docstring.full_description
@@ -367,7 +425,7 @@ class MarkdownGenerator:
         try:
             labels = enum_labels(cls)
             for e in cls:
-                enum_def = f"* **{safe_name(e.name)}** = `{repr(e.value)}`"
+                enum_def = f"* **{safe_name(e.name)}** = {quote_value(e.value)}"
                 enum_label = labels.get(e.name)
                 if enum_label is not None:
                     w.print(f"{enum_def} - {enum_label}")
@@ -376,12 +434,14 @@ class MarkdownGenerator:
         except OSError:  # source code not available
             # some special constructs (e.g. dynamically generated code) don't have source
             for e in cls:
-                enum_def = f"* **{safe_name(e.name)}** = `{repr(e.value)}`"
+                enum_def = f"* **{safe_name(e.name)}** = {quote_value(e.value)}"
                 w.print(enum_def)
 
         w.print()
 
     def _generate_bases(self, cls: type, w: MarkdownWriter) -> None:
+        "Writes base classes for a Python class."
+
         module = sys.modules[cls.__module__]
         bases = [b for b in cls.__bases__ if b is not object]
         if len(bases) > 0:
@@ -440,16 +500,16 @@ class MarkdownGenerator:
                     w.print(f"* {param_item} - {param_desc}")
             w.print()
 
-    def _generate_functions(self, cls: type, w: MarkdownWriter) -> None:
-        "Writes Markdown output for Python member functions in a class."
+        if docstring.returns:
+            returns_desc = self._transform_text(docstring.returns.description, param_resolver, module)
+            if docstring.returns.return_type is not inspect.Signature.empty:
+                return_type = fmt.python_type_to_str(docstring.returns.return_type)
+                w.print(f"**Returns:** ({return_type}) - {returns_desc}")
+            else:
+                w.print(f"**Returns:** {returns_desc}")
 
-        module = sys.modules[cls.__module__]
-        fmt = TypeFormatter(
-            context=module,
-            type_transform=lambda c: self._class_link(c, module),
-            value_transform=lambda v: f"`{v!r}`",
-            use_union_operator=True,
-        )
+    def _generate_functions(self, cls: type, fmt: TypeFormatter, w: MarkdownWriter) -> None:
+        "Writes Markdown output for Python member functions in a class."
 
         for _, func in inspect.getmembers(cls, lambda f: inspect.isfunction(f)):
             if not self.options.include_private and is_private(func):
@@ -457,7 +517,7 @@ class MarkdownGenerator:
 
             self._generate_function(func, ClassResolver(cls), MemberFunctionResolver(cls, func), fmt, w)
 
-    def _generate_class(self, cls: type, w: MarkdownWriter) -> None:
+    def _generate_class(self, cls: type, fmt: TypeFormatter, w: MarkdownWriter) -> None:
         "Writes Markdown output for a single (regular) Python class."
 
         self._generate_bases(cls, w)
@@ -469,9 +529,9 @@ class MarkdownGenerator:
             w.print(self._transform_text(description, ClassResolver(cls), module))
             w.print()
 
-        self._generate_functions(cls, w)
+        self._generate_functions(cls, fmt, w)
 
-    def _generate_dataclass(self, cls: type[DataclassInstance], w: MarkdownWriter) -> None:
+    def _generate_dataclass(self, cls: type[DataclassInstance], fmt: TypeFormatter, w: MarkdownWriter) -> None:
         "Writes Markdown output for a single Python data-class."
 
         self._generate_bases(cls, w)
@@ -488,25 +548,27 @@ class MarkdownGenerator:
             w.print("**Properties:**")
             w.print()
 
-            fmt = TypeFormatter(
-                context=module,
-                type_transform=lambda c: self._class_link(c, module),
-                value_transform=lambda v: f"`{v!r}`",
-                use_union_operator=True,
-            )
             for name, docstring_param in docstring.params.items():
                 param_type = fmt.python_type_to_str(docstring_param.param_type)
                 param_desc = self._transform_text(docstring_param.description, MemberResolver(cls, name), module)
                 w.print(f"* **{safe_name(name)}** ({param_type}) - {param_desc}")
             w.print()
 
-        self._generate_functions(cls, w)
+        self._generate_functions(cls, fmt, w)
 
     def _generate_module(self, module: ModuleType, target: Path) -> None:
         "Writes Markdown output for a single Python module."
 
+        fmt = TypeFormatter(
+            context=module,
+            type_transform=lambda c: self._class_link(c, module),
+            value_transform=quote_value,
+            use_union_operator=True,
+        )
+
         w = MarkdownWriter()
-        w.print(f"# {self._heading_anchor(module_anchor(module), module.__name__)}")
+        module_name = module.__name__.split(".")[-1]
+        w.print(f"# {self._heading_anchor(module_anchor(module), module_name)}")
         w.print()
         if module.__doc__:
             w.print(self._transform_text(module.__doc__, ModuleResolver(module), module))
@@ -524,21 +586,15 @@ class MarkdownGenerator:
 
             try:
                 if is_dataclass_type(cls):
-                    self._generate_dataclass(cls, w)
+                    self._generate_dataclass(cls, fmt, w)
                 elif is_type_enum(cls):
                     self._generate_enum(cls, w)
                 elif isinstance(cls, type):
-                    self._generate_class(cls, w)
+                    self._generate_class(cls, fmt, w)
             except Exception as e:
                 raise ProcessingError(f"error while processing type `{cls.__name__}` in module `{module.__name__}`", obj=cls) from e
 
         # generate top-level module functions
-        fmt = TypeFormatter(
-            context=module,
-            type_transform=lambda c: self._class_link(c, module),
-            value_transform=lambda v: f"`{v!r}`",
-            use_union_operator=True,
-        )
         functions = get_module_functions(module)
         if not self.options.include_private:
             functions = [fn for fn in functions if not is_private(fn)]
@@ -555,7 +611,11 @@ class MarkdownGenerator:
             f.write(w.fetch())
 
     def generate(self, target: Path) -> None:
-        "Writes Markdown files to a target directory."
+        """
+        Writes Markdown files to a target directory.
+
+        The subdirectories that files are written to match the hierarchy of the Python modules.
+        """
 
         for module in self.modules:
             module_path = module.__name__.replace(".", "/") + ".md"
@@ -565,6 +625,14 @@ class MarkdownGenerator:
 
 
 def generate_markdown(modules: list[ModuleType], out_dir: Path, *, options: MarkdownOptions | None = None) -> None:
+    """
+    Generates Markdown documentation for a list of modules.
+
+    :param modules: The list of modules to generate documentation for.
+    :param out_dir: Directory to write Markdown files to.
+    :param options: Options for generating Markdown output.
+    """
+
     if not modules:
         raise ValueError("no Python module given")
     if options is None:

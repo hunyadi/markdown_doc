@@ -48,10 +48,10 @@ class ExtendedEnumType(enum.Enum):
     An enumeration type that extends the value set of another.
     """
 
-    on = "on"
+    on = "*`on`*"
     "Documents the enumeration member `on`."
 
-    off = "off"
+    off = "*`off`*"
     "Documents the enumeration member `off`."
 
 
