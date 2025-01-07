@@ -11,6 +11,7 @@ from typing import Optional, Union
 
 from strong_typing.auxiliary import int8, int16, uint32, uint64
 from strong_typing.core import JsonType, Schema
+from strong_typing.inspection import extend_enum
 
 SimpleType = bool | int | float | str
 
@@ -29,6 +30,29 @@ class EnumType(enum.Enum):
 
     active = "active"
     inactive = "inactive"
+
+
+@enum.unique
+class BaseEnum(enum.Enum):
+    """
+    An enumeration type to be extended with additional enumeration values.
+    """
+
+    unspecified = "__unspecified__"
+
+
+@enum.unique
+@extend_enum(BaseEnum)
+class ExtendedEnumType(enum.Enum):
+    """
+    An enumeration type that extends the value set of another.
+    """
+
+    on = "on"
+    "Documents the enumeration member `on`."
+
+    off = "off"
+    "Documents the enumeration member `off`."
 
 
 class MyException(Exception):

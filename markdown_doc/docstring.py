@@ -60,7 +60,8 @@ def enum_labels(cls: type[Enum]) -> dict[str, str]:
     :returns: Maps enumeration names to their description (if present).
     """
 
-    body = ast.parse(inspect.getsource(cls)).body
+    code = inspect.getsource(cls)
+    body = ast.parse(code).body
     if len(body) != 1:
         raise TypeError("expected: a module with a single enumeration class")
 

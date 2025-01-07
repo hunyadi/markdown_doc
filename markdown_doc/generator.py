@@ -362,16 +362,23 @@ class MarkdownGenerator:
             w.print(self._transform_text(description, ClassResolver(cls), module))
             w.print()
 
-        labels = enum_labels(cls)
         w.print("**Members:**")
         w.print()
-        for e in cls:
-            enum_def = f"* **{safe_name(e.name)}** = `{repr(e.value)}`"
-            enum_label = labels.get(e.name)
-            if enum_label is not None:
-                w.print(f"{enum_def} - {enum_label}")
-            else:
+        try:
+            labels = enum_labels(cls)
+            for e in cls:
+                enum_def = f"* **{safe_name(e.name)}** = `{repr(e.value)}`"
+                enum_label = labels.get(e.name)
+                if enum_label is not None:
+                    w.print(f"{enum_def} - {enum_label}")
+                else:
+                    w.print(enum_def)
+        except OSError:  # source code not available
+            # some special constructs (e.g. dynamically generated code) don't have source
+            for e in cls:
+                enum_def = f"* **{safe_name(e.name)}** = `{repr(e.value)}`"
                 w.print(enum_def)
+
         w.print()
 
     def _generate_bases(self, cls: type, w: MarkdownWriter) -> None:
