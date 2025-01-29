@@ -14,7 +14,7 @@ from pathlib import Path
 from types import ModuleType
 
 from .argparse_action import EnumAction
-from .generator import MarkdownAnchorStyle, MarkdownOptions, generate_markdown
+from .generator import MarkdownAnchorStyle, MarkdownOptions, PartitionStrategy, generate_markdown
 from .import_util import import_modules
 
 
@@ -65,6 +65,12 @@ parser.add_argument(
     action=EnumAction(MarkdownAnchorStyle),  # type: ignore
     default=MarkdownAnchorStyle.GITBOOK,
     help="output format for generating anchors in headings",
+)
+parser.add_argument(
+    "--partition",
+    action=EnumAction(PartitionStrategy),  # type: ignore
+    default=PartitionStrategy.SINGLE,
+    help="how to split module contents across Markdown files",
 )
 
 args = parser.parse_args(namespace=ProgramArgs)

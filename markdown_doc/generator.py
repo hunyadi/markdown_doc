@@ -172,6 +172,80 @@ def module_path(target: str, source: str) -> str:
     return (relative_path / target_path.name).as_posix()
 
 
+@enum.unique
+class ObjectKind(enum.Enum):
+    "Represents a group of Python types, e.g. regular classes, data-classes, enumerations, module-level functions, etc."
+
+    CLASS = "class"
+    "Group for regular classes."
+
+    DATACLASS = "dataclass"
+    "Group for data-classes."
+
+    ENUM = "enum"
+    "Group for enumerations."
+
+    FUNCTION = "function"
+    "Group for module-level functions."
+
+    MODULE = "module"
+    "Group for modules."
+
+
+ObjectType = type | FunctionType
+
+
+def object_kind(cls: ObjectType | ModuleType) -> ObjectKind:
+    "Determines the group of types that the passed type belongs to."
+
+    if isinstance(cls, ModuleType):
+        return ObjectKind.MODULE
+    elif isinstance(cls, FunctionType):
+        return ObjectKind.FUNCTION
+    elif is_dataclass_type(cls):
+        return ObjectKind.DATACLASS
+    elif is_type_enum(cls):
+        return ObjectKind.ENUM
+    else:
+        return ObjectKind.CLASS
+
+
+@dataclass
+class Context:
+    """
+    Represents a group of types that are exported as a unit.
+
+    :param module: The module in which the types are defined.
+    :param partition: Identifies the group of types.
+    """
+
+    module: ModuleType
+    partition: ObjectKind | None
+
+    def name(self) -> str:
+        if self.partition is not None:
+            return f"{self.module.__name__}-{self.partition.value}"
+        else:
+            return self.module.__name__
+
+    def matches(self, cls: ObjectType) -> bool:
+        if cls.__module__ != self.module.__name__:
+            return False
+        if self.partition is None:
+            return True
+
+        return self.partition is object_kind(cls)
+
+    def path_to(self, cls: ObjectType | ModuleType) -> str:
+        if self.partition is not None:
+            kind = object_kind(cls)
+        else:
+            kind = None
+        target = Context(sys.modules[cls.__module__], kind).name()
+        source = self.name()
+        return module_path(target, source)
+
+
 def module_anchor(module: ModuleType) -> str:
     "Module anchor within a Markdown file."
 
@@ -179,11 +253,11 @@ def module_anchor(module: ModuleType) -> str:
     return safe_id(module.__name__)
 
 
-def module_link(module: ModuleType, context: ModuleType) -> str:
+def module_link(module: ModuleType, context: Context) -> str:
     "Markdown link with a fully-qualified module reference."
 
     assert isinstance(module, ModuleType), "expected: module reference"
-    return f"[{module.__name__}]({module_path(module.__name__, context.__name__)}#{safe_id(module.__name__)})"
+    return f"[{module.__name__}]({context.path_to(module)}#{safe_id(module.__name__)})"
 
 
 def class_anchor(cls: type) -> str:
@@ -193,26 +267,23 @@ def class_anchor(cls: type) -> str:
     return safe_id(f"{cls.__module__}.{cls.__qualname__}")
 
 
-ObjectType = type | FunctionType
-
-
-def _class_link(cls: ObjectType, context: ModuleType) -> str:
+def _class_link(cls: ObjectType, context: Context) -> str:
     "Markdown link with a partially- or fully-qualified class or function reference."
 
     qualname = f"{cls.__module__}.{cls.__qualname__}"
     local_link = f"#{safe_id(qualname)}"
 
-    if cls.__module__ != context.__name__:
-        # non-local reference
-        link = f"{module_path(cls.__module__, context.__name__)}{local_link}"
-    else:
+    if context.matches(cls):
         # local reference
         link = local_link
+    else:
+        # non-local reference
+        link = f"{context.path_to(cls)}{local_link}"
 
     return f"[{safe_name(cls.__name__)}]({link})"
 
 
-def class_link(cls: type, context: ModuleType) -> str:
+def class_link(cls: type, context: Context) -> str:
     "Markdown link with a partially- or fully-qualified class reference."
 
     assert not isinstance(cls, ModuleType) and not isinstance(cls, FunctionType), "expected: class reference"
@@ -226,7 +297,7 @@ def function_anchor(fn: FunctionType) -> str:
     return safe_id(f"{fn.__module__}.{fn.__qualname__}")
 
 
-def function_link(fn: FunctionType, context: ModuleType) -> str:
+def function_link(fn: FunctionType, context: Context) -> str:
     "Markdown link with a partially- or fully-qualified function reference."
 
     assert isinstance(fn, FunctionType), "expected: function reference"
@@ -246,6 +317,9 @@ class MarkdownWriter:
 
     def __init__(self) -> None:
         self.lines = []
+
+    def __bool__(self) -> bool:
+        return len(self.lines) > 0
 
     def fetch(self) -> str:
         lines = "\n".join(self.lines)
@@ -267,17 +341,32 @@ class MarkdownAnchorStyle(enum.Enum):
     "GitBook anchor style, with Markdown extension syntax {#...} following heading title text."
 
 
+@enum.unique
+class PartitionStrategy(enum.Enum):
+    "Determines how to split module contents across Markdown files."
+
+    SINGLE = "single"
+    "Create a single Markdown file with all classes, enums and functions in a module."
+
+    BY_KIND = "by_kind"
+    "Create separate Markdown files for classes, enums and functions in each module."
+
+
 @dataclass
 class MarkdownOptions:
     """
     Options for generating Markdown output.
 
     :param anchor_style: Output format for generating anchors in headings.
+    :param partition_strategy: Determines how to split module contents across Markdown files.
     :param include_private: Whether to include private classes, functions and methods.
+    :param stdlib_links: Whether to include references for built-in types and types in the Python standard library.
     """
 
     anchor_style: MarkdownAnchorStyle = MarkdownAnchorStyle.GITHUB
+    partition_strategy: PartitionStrategy = PartitionStrategy.SINGLE
     include_private: bool = False
+    stdlib_links: bool = True
 
 
 class ProcessingError(RuntimeError):
@@ -301,7 +390,13 @@ class MarkdownGenerator:
     options: MarkdownOptions
     predicate: Callable[[ObjectType], bool] | None
 
-    def __init__(self, modules: list[ModuleType], *, options: MarkdownOptions | None = None, predicate: Callable[[ObjectType], bool] | None = None) -> None:
+    def __init__(
+        self,
+        modules: list[ModuleType],
+        *,
+        options: MarkdownOptions | None = None,
+        predicate: Callable[[ObjectType], bool] | None = None,
+    ) -> None:
         """
         Instantiates a Markdown generator object.
 
@@ -327,7 +422,7 @@ class MarkdownGenerator:
             case MarkdownAnchorStyle.GITBOOK:
                 return text + " {#" + anchor + "}"
 
-    def _module_link(self, module: ModuleType, context: ModuleType) -> str:
+    def _module_link(self, module: ModuleType, context: Context) -> str:
         "Creates a link to a class if it is part of the exported batch."
 
         if module in self.modules:
@@ -335,13 +430,13 @@ class MarkdownGenerator:
         else:
             return safe_name(module.__name__)
 
-    def _class_link(self, cls: type, context: ModuleType) -> str:
+    def _class_link(self, cls: type, context: Context) -> str:
         "Creates a link to a class if it is part of the exported batch."
 
         if cls.__module__ == "builtins":
             # built-in type such as `bool`, `int` or `str`
             return cls.__name__
-        elif cls.__module__ in sys.builtin_module_names or cls.__module__ in sys.stdlib_module_names:
+        elif self.options.stdlib_links and (cls.__module__ in sys.builtin_module_names or cls.__module__ in sys.stdlib_module_names):
             # standard library reference
             qualname = f"{cls.__module__}.{cls.__qualname__}"
             return f"[{qualname}](https://docs.python.org/3/library/{cls.__module__}.html#{qualname})"
@@ -352,7 +447,7 @@ class MarkdownGenerator:
         else:
             return safe_name(cls.__name__)
 
-    def _function_link(self, fn: FunctionType, context: ModuleType) -> str:
+    def _function_link(self, fn: FunctionType, context: Context) -> str:
         "Creates a link to a function if it is part of the exported batch."
 
         module = sys.modules[fn.__module__]
@@ -361,7 +456,7 @@ class MarkdownGenerator:
         else:
             return safe_name(fn.__name__)
 
-    def _replace_refs(self, text: str, resolver: Resolver, context: ModuleType) -> str:
+    def _replace_refs(self, text: str, resolver: Resolver, context: Context) -> str:
         "Replaces references in module, class or parameter doc-string text."
 
         def _replace_module_ref(m: re.Match[str]) -> str:
@@ -396,7 +491,7 @@ class MarkdownGenerator:
 
         return text
 
-    def _transform_text(self, text: str, resolver: Resolver, context: ModuleType) -> str:
+    def _transform_text(self, text: str, resolver: Resolver, context: Context) -> str:
         """
         Applies transformations to module, class or parameter doc-string text.
 
@@ -410,6 +505,13 @@ class MarkdownGenerator:
         text = self._replace_refs(text, resolver, context)
         return text
 
+    def _create_context(self, module: ModuleType, partition: ObjectKind) -> Context:
+        match self.options.partition_strategy:
+            case PartitionStrategy.SINGLE:
+                return Context(module, None)
+            case PartitionStrategy.BY_KIND:
+                return Context(module, partition)
+
     def _generate_enum(self, cls: type[Enum], w: MarkdownWriter) -> None:
         "Writes Markdown output for a single Python enumeration class with all enumeration members."
 
@@ -417,7 +519,7 @@ class MarkdownGenerator:
         docstring = parse_type(cls)
         description = docstring.full_description
         if description:
-            w.print(self._transform_text(description, ClassResolver(cls), module))
+            w.print(self._transform_text(description, ClassResolver(cls), self._create_context(module, ObjectKind.ENUM)))
             w.print()
 
         w.print("**Members:**")
@@ -444,8 +546,9 @@ class MarkdownGenerator:
 
         module = sys.modules[cls.__module__]
         bases = [b for b in cls.__bases__ if b is not object]
+        context = self._create_context(module, ObjectKind.CLASS)
         if len(bases) > 0:
-            w.print(f"**Bases:** {', '.join(self._class_link(b, module) for b in bases)}")
+            w.print(f"**Bases:** {', '.join(self._class_link(b, context) for b in bases)}")
             w.print()
 
     def _generate_function(
@@ -453,12 +556,12 @@ class MarkdownGenerator:
         function: FunctionType,
         signature_resolver: Resolver,
         param_resolver: Resolver,
+        context: Context,
         fmt: TypeFormatter,
         w: MarkdownWriter,
     ) -> None:
         "Writes Markdown output for a single Python function."
 
-        module = sys.modules[function.__module__]
         docstring = parse_type(function)
 
         description = docstring.full_description
@@ -483,7 +586,7 @@ class MarkdownGenerator:
         w.print(f"### {self._heading_anchor(function_anchor(function), title)}")
         w.print()
 
-        w.print(self._transform_text(description, signature_resolver, module))
+        w.print(self._transform_text(description, signature_resolver, context))
         w.print()
 
         if docstring.params:
@@ -492,7 +595,7 @@ class MarkdownGenerator:
 
             for param_name, docstring_param in docstring.params.items():
                 param_item = f"**{safe_name(param_name)}**"
-                param_desc = self._transform_text(docstring_param.description, param_resolver, module)
+                param_desc = self._transform_text(docstring_param.description, param_resolver, context)
                 if docstring_param.param_type is not inspect.Signature.empty:
                     param_type = fmt.python_type_to_str(docstring_param.param_type)
                     w.print(f"* {param_item} ({param_type}) - {param_desc}")
@@ -501,7 +604,7 @@ class MarkdownGenerator:
             w.print()
 
         if docstring.returns:
-            returns_desc = self._transform_text(docstring.returns.description, param_resolver, module)
+            returns_desc = self._transform_text(docstring.returns.description, param_resolver, context)
             if docstring.returns.return_type is not inspect.Signature.empty:
                 return_type = fmt.python_type_to_str(docstring.returns.return_type)
                 w.print(f"**Returns:** ({return_type}) - {returns_desc}")
@@ -515,33 +618,53 @@ class MarkdownGenerator:
             if not self.options.include_private and is_private(func):
                 continue
 
-            self._generate_function(func, ClassResolver(cls), MemberFunctionResolver(cls, func), fmt, w)
+            module = sys.modules[func.__module__]
+            context = self._create_context(module, ObjectKind.CLASS)
+            self._generate_function(func, ClassResolver(cls), MemberFunctionResolver(cls, func), context, fmt, w)
 
-    def _generate_class(self, cls: type, fmt: TypeFormatter, w: MarkdownWriter) -> None:
+    def _generate_class(self, cls: type, w: MarkdownWriter) -> None:
         "Writes Markdown output for a single (regular) Python class."
 
         self._generate_bases(cls, w)
 
         module = sys.modules[cls.__module__]
+        context = self._create_context(module, ObjectKind.CLASS)
+
+        fmt = TypeFormatter(
+            context=module,
+            type_transform=lambda c: self._class_link(c, context),
+            value_transform=quote_value,
+            use_union_operator=True,
+        )
+
         docstring = parse_type(cls)
         description = docstring.full_description
         if description:
-            w.print(self._transform_text(description, ClassResolver(cls), module))
+            w.print(self._transform_text(description, ClassResolver(cls), context))
             w.print()
 
         self._generate_functions(cls, fmt, w)
 
-    def _generate_dataclass(self, cls: type[DataclassInstance], fmt: TypeFormatter, w: MarkdownWriter) -> None:
+    def _generate_dataclass(self, cls: type[DataclassInstance], w: MarkdownWriter) -> None:
         "Writes Markdown output for a single Python data-class."
 
         self._generate_bases(cls, w)
 
         module = sys.modules[cls.__module__]
+        context = self._create_context(module, ObjectKind.DATACLASS)
+
+        fmt = TypeFormatter(
+            context=module,
+            type_transform=lambda c: self._class_link(c, context),
+            value_transform=quote_value,
+            use_union_operator=True,
+        )
+
         docstring = parse_type(cls)
         check_docstring(cls, docstring, strict=True)
         description = docstring.full_description
         if description:
-            w.print(self._transform_text(description, ClassResolver(cls), module))
+            w.print(self._transform_text(description, ClassResolver(cls), context))
             w.print()
 
         if docstring.params:
@@ -550,30 +673,32 @@ class MarkdownGenerator:
 
             for name, docstring_param in docstring.params.items():
                 param_type = fmt.python_type_to_str(docstring_param.param_type)
-                param_desc = self._transform_text(docstring_param.description, MemberResolver(cls, name), module)
+                param_desc = self._transform_text(docstring_param.description, MemberResolver(cls, name), context)
                 w.print(f"* **{safe_name(name)}** ({param_type}) - {param_desc}")
             w.print()
 
         self._generate_functions(cls, fmt, w)
 
-    def _generate_module(self, module: ModuleType, target: Path) -> None:
+    def _generate_module(self, module: ModuleType, target: Path, partition: ObjectKind | None) -> None:
         "Writes Markdown output for a single Python module."
 
+        context = self._create_context(module, ObjectKind.MODULE)
         fmt = TypeFormatter(
             context=module,
-            type_transform=lambda c: self._class_link(c, module),
+            type_transform=lambda c: self._class_link(c, context),
             value_transform=quote_value,
             use_union_operator=True,
         )
 
-        w = MarkdownWriter()
+        header = MarkdownWriter()
         module_name = module.__name__.split(".")[-1]
-        w.print(f"# {self._heading_anchor(module_anchor(module), module_name)}")
-        w.print()
+        header.print(f"# {self._heading_anchor(module_anchor(module), module_name)}")
+        header.print()
         if module.__doc__:
-            w.print(self._transform_text(module.__doc__, ModuleResolver(module), module))
-            w.print()
+            header.print(self._transform_text(module.__doc__, ModuleResolver(module), context))
+            header.print()
 
+        w = MarkdownWriter()
         for cls in get_module_classes(module):
             if not self.options.include_private and is_private(cls):
                 continue
@@ -581,34 +706,55 @@ class MarkdownGenerator:
             if self.predicate is not None and not self.predicate(cls):
                 continue
 
+            # check whether the current object is to be exported
+            if partition is not None:
+                if is_dataclass_type(cls):
+                    if partition is not ObjectKind.DATACLASS:
+                        continue
+                elif is_type_enum(cls):
+                    if partition is not ObjectKind.ENUM:
+                        continue
+                elif isinstance(cls, type):
+                    if partition is not ObjectKind.CLASS:
+                        continue
+
             w.print(f"## {self._heading_anchor(class_anchor(cls), safe_name(cls.__name__))}")
             w.print()
 
             try:
                 if is_dataclass_type(cls):
-                    self._generate_dataclass(cls, fmt, w)
+                    self._generate_dataclass(cls, w)
                 elif is_type_enum(cls):
                     self._generate_enum(cls, w)
                 elif isinstance(cls, type):
-                    self._generate_class(cls, fmt, w)
+                    self._generate_class(cls, w)
+                else:
+                    raise TypeError(f"expected: data-class, enum class or regular class; got: {cls}")
             except Exception as e:
-                raise ProcessingError(f"error while processing type `{cls.__name__}` in module `{module.__name__}`", obj=cls) from e
+                raise ProcessingError(
+                    f"error while processing type `{cls.__name__}` in module `{module.__name__}`",
+                    obj=cls,
+                ) from e
 
-        # generate top-level module functions
-        functions = get_module_functions(module)
-        if not self.options.include_private:
-            functions = [fn for fn in functions if not is_private(fn)]
-        if functions:
-            anchor = f"{safe_id(module.__name__)}-functions"
-            anchored_title = self._heading_anchor(anchor, "Functions")
-            w.print(f"## {anchored_title}")
-            w.print()
+        if partition is None or partition is ObjectKind.FUNCTION:
+            # generate top-level module functions
+            functions = get_module_functions(module)
+            if not self.options.include_private:
+                functions = [fn for fn in functions if not is_private(fn)]
+            if functions:
+                anchor = f"{safe_id(module.__name__)}-functions"
+                anchored_title = self._heading_anchor(anchor, "Functions")
+                w.print(f"## {anchored_title}")
+                w.print()
 
-            for func in functions:
-                self._generate_function(func, ModuleResolver(module), ModuleFunctionResolver(func), fmt, w)
+                for func in functions:
+                    self._generate_function(func, ModuleResolver(module), ModuleFunctionResolver(func), context, fmt, w)
 
-        with open(target, "w", encoding="utf-8") as f:
-            f.write(w.fetch())
+        if w:
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(header.fetch())
+                f.write("\n")
+                f.write(w.fetch())
 
     def generate(self, target: Path) -> None:
         """
@@ -621,7 +767,14 @@ class MarkdownGenerator:
             module_path = module.__name__.replace(".", "/") + ".md"
             path = target / Path(module_path)
             os.makedirs(path.parent, exist_ok=True)
-            self._generate_module(module, path)
+
+            match self.options.partition_strategy:
+                case PartitionStrategy.SINGLE:
+                    self._generate_module(module, path, None)
+                case PartitionStrategy.BY_KIND:
+                    for partition in [ObjectKind.DATACLASS, ObjectKind.ENUM, ObjectKind.CLASS, ObjectKind.FUNCTION]:
+                        partition_path = path.with_stem(f"{path.stem}-{partition.value}")
+                        self._generate_module(module, partition_path, partition)
 
 
 def generate_markdown(modules: list[ModuleType], out_dir: Path, *, options: MarkdownOptions | None = None) -> None:
