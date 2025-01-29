@@ -6,7 +6,7 @@ Copyright 2024-2025, Levente Hunyadi
 :see: https://github.com/hunyadi/markdown_doc
 """
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 __author__ = "Levente Hunyadi"
 __copyright__ = "Copyright 2024-2025, Levente Hunyadi"
 __license__ = "MIT"
