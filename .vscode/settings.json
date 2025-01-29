@@ -17,7 +17,13 @@
     "cSpell.words": [
         "GITBOOK",
         "Hunyadi",
-        "Levente"
+        "Levente",
+        "mobi",
+        "mypy",
+        "setlocal",
+        "setuptools",
+        "stdlib",
+        "topdown"
     ],
     "ruff.lineLength": 160
 }

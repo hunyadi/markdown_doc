@@ -67,11 +67,25 @@ from markdown_doc.generator import MarkdownGenerator
 MarkdownGenerator([module1, module2, module3]).generate(out_dir)
 ```
 
+Pass an object of `MarkdownOptions` to configure behavior:
+
+```python
+MarkdownGenerator(
+    [module1, module2, module3],
+    options=MarkdownOptions(
+        anchor_style=MarkdownAnchorStyle.GITBOOK,
+        partition_strategy=PartitionStrategy.SINGLE,
+        include_private=False,
+        stdlib_links=True,
+    ),
+).generate(out_dir)
+```
+
 ### Running the utility from the command line
 
 ```
 $ python3 -m markdown_doc --help
-usage: markdown_doc [-h] [-d [DIRECTORY ...]] [-m [MODULE ...]] [-r ROOT_DIR] [-o OUT_DIR] [--anchor-style {GitBook,GitHub}]
+usage: markdown_doc [-h] [-d [DIRECTORY ...]] [-m [MODULE ...]] [-r ROOT_DIR] [-o OUT_DIR] [--anchor-style {GitBook,GitHub}] [--partition {single,by_kind}]
 
 Generates Markdown documentation from Python code
 
@@ -87,6 +101,8 @@ options:
                         output directory (default: 'docs' in working directory)
   --anchor-style {GitBook,GitHub}
                         output format for generating anchors in headings
+  --partition {single,by_kind}
+                        how to split module contents across Markdown files
 ```
 
 ## Related work

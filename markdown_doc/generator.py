@@ -241,7 +241,13 @@ class Context:
             kind = object_kind(cls)
         else:
             kind = None
-        target = Context(sys.modules[cls.__module__], kind).name()
+
+        if isinstance(cls, ModuleType):
+            module = cls
+        else:
+            module = sys.modules[cls.__module__]
+
+        target = Context(module, kind).name()
         source = self.name()
         return module_path(target, source)
 
@@ -661,7 +667,8 @@ class MarkdownGenerator:
         )
 
         docstring = parse_type(cls)
-        check_docstring(cls, docstring, strict=True)
+        if docstring.short_description or docstring.params:
+            check_docstring(cls, docstring, strict=True)
         description = docstring.full_description
         if description:
             w.print(self._transform_text(description, ClassResolver(cls), context))

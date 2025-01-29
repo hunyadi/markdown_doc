@@ -310,10 +310,15 @@ def send_message(
 if __name__ == "__main__":
     from pathlib import Path
 
-    from markdown_doc.generator import MarkdownAnchorStyle, MarkdownGenerator, MarkdownOptions
+    from markdown_doc.generator import MarkdownAnchorStyle, MarkdownGenerator, MarkdownOptions, PartitionStrategy
 
     MarkdownGenerator(
         [sys.modules[__name__]],
-        options=MarkdownOptions(anchor_style=MarkdownAnchorStyle.GITBOOK),
+        options=MarkdownOptions(
+            anchor_style=MarkdownAnchorStyle.GITBOOK,
+            partition_strategy=PartitionStrategy.SINGLE,
+            include_private=False,
+            stdlib_links=True,
+        ),
         predicate=lambda cls: getattr(cls, "ignore", None) is not True,
     ).generate(Path(__file__).parent.parent / "docs")

@@ -25,6 +25,7 @@ class ProgramArgs(argparse.Namespace):
     root_dir: Path
     out_dir: Path
     anchor_style: MarkdownAnchorStyle
+    partition: PartitionStrategy
 
 
 parser = argparse.ArgumentParser(
@@ -77,18 +78,23 @@ args = parser.parse_args(namespace=ProgramArgs)
 out_dir = Path.cwd() / args.out_dir  # does not alter absolute paths
 root_dir = Path.cwd() / args.root_dir  # does not alter absolute paths
 
-modules: list[ModuleType] = []
-if args.directory:
-    for directory in args.directory:
-        modules.extend(import_modules(root_dir, directory))
-if args.module:
-    for module in args.module:
-        modules.append(importlib.import_module(module))
-
-options = MarkdownOptions(anchor_style=args.anchor_style)
-
 try:
+    modules: list[ModuleType] = []
+    if args.directory:
+        for directory in args.directory:
+            if not directory.is_dir():
+                raise ValueError(f"not a directory: {directory}")
+
+            modules.extend(import_modules(root_dir, directory))
+    if args.module:
+        for module in args.module:
+            modules.append(importlib.import_module(module))
+
+    options = MarkdownOptions(anchor_style=args.anchor_style)
+
     generate_markdown(modules, out_dir, options=options)
 except Exception as e:
     print(e, file=sys.stderr)
+    if e.__cause__:
+        print(e.__cause__, file=sys.stderr)
     sys.exit(1)

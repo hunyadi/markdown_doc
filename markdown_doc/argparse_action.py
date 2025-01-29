@@ -82,7 +82,7 @@ class _EnumAction(argparse.Action):
         metavar: str | tuple[str, ...] | None = None,
     ):
         """
-        Invoked by :cls:`argparse.ArgumentParser` to create an :cls:`argparse.Action`.
+        Invoked by :class:`argparse.ArgumentParser` to create an :class:`argparse.Action`.
         """
 
         if const is not None and not isinstance(const, enum.Enum):
@@ -115,7 +115,7 @@ class _EnumAction(argparse.Action):
         option_string: str | None = None,
     ) -> None:
         """
-        Invoked by :cls:`argparse.ArgumentParser` to apply the action to a command-line argument.
+        Invoked by :class:`argparse.ArgumentParser` to apply the action to a command-line argument.
         """
 
         if isinstance(values, Sequence):
