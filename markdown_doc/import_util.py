@@ -47,12 +47,23 @@ def import_modules(root_path: Path, scan_path: Path) -> list[ModuleType]:
 
         # import self
         base_path = Path(dir_path)
-        modules.append(importlib.import_module(module_path(root_path, base_path)))
+        qualified_name = module_path(root_path, base_path)
+        try:
+            module = importlib.import_module(qualified_name)
+            modules.append(module)
+        except ModuleNotFoundError:
+            pass
 
         # import child modules
         for file_name in file_names:
             if file_name.startswith("__") or not file_name.endswith(".py"):
                 continue
 
-            modules.append(importlib.import_module(module_path(root_path, base_path / file_name.removesuffix(".py"))))
+            qualified_name = module_path(root_path, base_path / file_name.removesuffix(".py"))
+            try:
+                module = importlib.import_module(qualified_name)
+                modules.append(module)
+            except ModuleNotFoundError:
+                pass
+
     return modules
