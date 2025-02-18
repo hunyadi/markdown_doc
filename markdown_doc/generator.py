@@ -18,7 +18,7 @@ from pathlib import Path
 from types import FunctionType, ModuleType
 from typing import Any, Callable
 
-from strong_typing.docstring import check_docstring, parse_type
+from strong_typing.docstring import DocstringSeeAlso, check_docstring, parse_type
 from strong_typing.inspection import DataclassInstance, get_module_classes, get_module_functions, is_dataclass_type, is_type_enum
 from strong_typing.name import TypeFormatter
 
@@ -557,6 +557,16 @@ class MarkdownGenerator:
             w.print(f"**Bases:** {', '.join(self._class_link(b, context) for b in bases)}")
             w.print()
 
+    def _generate_references(self, references: list[DocstringSeeAlso], w: MarkdownWriter) -> None:
+        "Writes references defined in a doc-string with `:see:`."
+
+        if references:
+            w.print("**References:**")
+            w.print()
+            for reference in references:
+                w.print(f"* {reference.text}")
+            w.print()
+
     def _generate_function(
         self,
         function: FunctionType,
@@ -616,6 +626,9 @@ class MarkdownGenerator:
                 w.print(f"**Returns:** ({return_type}) - {returns_desc}")
             else:
                 w.print(f"**Returns:** {returns_desc}")
+            w.print()
+
+        self._generate_references(docstring.see_also, w)
 
     def _generate_functions(self, cls: type, fmt: TypeFormatter, w: MarkdownWriter) -> None:
         "Writes Markdown output for Python member functions in a class."
@@ -648,6 +661,8 @@ class MarkdownGenerator:
         if description:
             w.print(self._transform_text(description, ClassResolver(cls), context))
             w.print()
+
+        self._generate_references(docstring.see_also, w)
 
         self._generate_functions(cls, fmt, w)
 
@@ -684,6 +699,8 @@ class MarkdownGenerator:
                 w.print(f"* **{safe_name(name)}** ({param_type}) - {param_desc}")
             w.print()
 
+        self._generate_references(docstring.see_also, w)
+
         self._generate_functions(cls, fmt, w)
 
     def _generate_module(self, module: ModuleType, target: Path, partition: ObjectKind | None) -> None:
@@ -701,9 +718,13 @@ class MarkdownGenerator:
         module_name = module.__name__.split(".")[-1]
         header.print(f"# {self._heading_anchor(module_anchor(module), module_name)}")
         header.print()
-        if module.__doc__:
-            header.print(self._transform_text(module.__doc__, ModuleResolver(module), context))
+
+        docstring = parse_type(module)
+        if docstring.full_description:
+            header.print(self._transform_text(docstring.full_description, ModuleResolver(module), context))
             header.print()
+
+        self._generate_references(docstring.see_also, header)
 
         w = MarkdownWriter()
         for cls in get_module_classes(module):
