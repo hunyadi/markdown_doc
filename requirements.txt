@@ -1,4 +1,7 @@
-json_strong_typing >= 0.3.6
+# production dependencies
+json_strong_typing >= 0.3.8
 
-mypy
+# development dependencies
+build
 flake8
+mypy
