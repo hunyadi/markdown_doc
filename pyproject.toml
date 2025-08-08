@@ -1,6 +1,59 @@
 [build-system]
-requires = ["setuptools>=51", "wheel"]
+requires = ["setuptools>=80.0"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "markdown-doc"
+description = "Generate Markdown documentation from Python code"
+readme = { file = "README.md", content-type = "text/markdown" }
+keywords = ["markdown", "documentation-generator", "python-typing"]
+license = "MIT"
+authors = [
+    { name = "Levente Hunyadi", email = "hunyadi@gmail.com" }
+]
+maintainers = [
+    { name = "Levente Hunyadi", email = "hunyadi@gmail.com" }
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Documentation",
+    "Topic :: Text Processing :: Markup :: Markdown",
+    "Topic :: Utilities",
+    "Typing :: Typed"
+]
+dependencies = [
+    "json_strong_typing >= 0.4"
+]
+dynamic = ["version"]
+
+[project.urls]
+"Homepage" = "https://github.com/hunyadi/markdown_doc"
+"Source" = "https://github.com/hunyadi/markdown_doc"
+
+[tool.setuptools]
+include-package-data = true
+packages = ["markdown_doc"]
+zip-safe = true
+
+[tool.setuptools.dynamic]
+version = { attr = "markdown_doc.__version__" }
+
+[tool.setuptools.package-data]
+"markdown_doc" = ["py.typed"]
 
 [tool.ruff]
 line-length = 160
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I", "Q"]

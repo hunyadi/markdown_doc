@@ -3,5 +3,5 @@ json_strong_typing >= 0.3.8
 
 # development dependencies
 build
-flake8
 mypy
+ruff

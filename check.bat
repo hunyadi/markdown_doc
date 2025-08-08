@@ -3,8 +3,16 @@ setlocal
 
 set python=python.exe
 
-%python% -m mypy markdown_doc || exit /b 1
-%python% -m flake8 markdown_doc || exit /b 2
-%python% check.py || exit /b 3
+%python% -m ruff check
+if errorlevel 1 goto error
+%python% -m ruff format --check
+if errorlevel 1 goto error
+%python% -m mypy markdown_doc
+if errorlevel 1 goto error
+%python% check.py
+if errorlevel 1 goto error
 
-:quit
+goto :EOF
+
+:error
+exit /b 1

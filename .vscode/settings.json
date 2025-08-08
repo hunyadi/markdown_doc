@@ -15,7 +15,7 @@
         "editor.defaultFormatter": "charliermarsh.ruff"
     },
     "cSpell.words": [
-        "GITBOOK",
+        "GitBook",
         "Hunyadi",
         "Levente",
         "mobi",
@@ -24,6 +24,5 @@
         "setuptools",
         "stdlib",
         "topdown"
-    ],
-    "ruff.lineLength": 160
+    ]
 }

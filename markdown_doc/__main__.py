@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
 
-from .argparse_action import EnumAction
+from .argparse_action import enum_action
 from .generator import MarkdownAnchorStyle, MarkdownOptions, PartitionStrategy, generate_markdown
 from .import_util import import_modules
 
@@ -63,13 +63,13 @@ parser.add_argument(
 )
 parser.add_argument(
     "--anchor-style",
-    action=EnumAction(MarkdownAnchorStyle),  # type: ignore
+    action=enum_action(MarkdownAnchorStyle),
     default=MarkdownAnchorStyle.GITBOOK,
     help="output format for generating anchors in headings",
 )
 parser.add_argument(
     "--partition",
-    action=EnumAction(PartitionStrategy),  # type: ignore
+    action=enum_action(PartitionStrategy),
     default=PartitionStrategy.SINGLE,
     help="how to split module contents across Markdown files",
 )

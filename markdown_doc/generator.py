@@ -269,7 +269,7 @@ def module_link(module: ModuleType, context: Context) -> str:
 def class_anchor(cls: type) -> str:
     "Class function anchor within a Markdown file."
 
-    assert not isinstance(cls, ModuleType) and not isinstance(cls, FunctionType), "expected: class reference"
+    assert not isinstance(cls, ModuleType) and not isinstance(cls, FunctionType), "expected: class reference"  # type: ignore[unreachable]
     return safe_id(f"{cls.__module__}.{cls.__qualname__}")
 
 
@@ -292,7 +292,7 @@ def _class_link(cls: ObjectType, context: Context) -> str:
 def class_link(cls: type, context: Context) -> str:
     "Markdown link with a partially- or fully-qualified class reference."
 
-    assert not isinstance(cls, ModuleType) and not isinstance(cls, FunctionType), "expected: class reference"
+    assert not isinstance(cls, ModuleType) and not isinstance(cls, FunctionType), "expected: class reference"  # type: ignore[unreachable]
     return _class_link(cls, context)
 
 
@@ -314,6 +314,12 @@ def is_private(cls: ObjectType) -> bool:
     "True if the class or function is private to the module."
 
     return cls.__name__.startswith("_") and not cls.__name__.startswith("__")
+
+
+def is_documented(cls: ObjectType) -> bool:
+    "True if the class or function has a doc-string description."
+
+    return parse_type(cls).full_description is not None
 
 
 class MarkdownWriter:
@@ -366,12 +372,14 @@ class MarkdownOptions:
     :param anchor_style: Output format for generating anchors in headings.
     :param partition_strategy: Determines how to split module contents across Markdown files.
     :param include_private: Whether to include private classes, functions and methods.
+    :param include_undocumented: Whether to include classes, functions and methods without a doc-string description.
     :param stdlib_links: Whether to include references for built-in types and types in the Python standard library.
     """
 
     anchor_style: MarkdownAnchorStyle = MarkdownAnchorStyle.GITHUB
     partition_strategy: PartitionStrategy = PartitionStrategy.SINGLE
     include_private: bool = False
+    include_undocumented: bool = False
     stdlib_links: bool = True
 
 
@@ -467,21 +475,21 @@ class MarkdownGenerator:
 
         def _replace_module_ref(m: re.Match[str]) -> str:
             ref: str = m.group(1)
-            obj = resolver.evaluate(ref)
+            obj: Any = resolver.evaluate(ref)
             if not isinstance(obj, ModuleType):
                 raise ValueError(f"expected: module reference; got: {obj} of type {type(obj)}")
             return self._module_link(obj, context)
 
         def _replace_class_ref(m: re.Match[str]) -> str:
             ref: str = m.group(1)
-            obj = resolver.evaluate(ref)
-            if isinstance(obj, ModuleType) or isinstance(obj, FunctionType):
+            obj: Any = resolver.evaluate(ref)
+            if isinstance(obj, ModuleType) or isinstance(obj, FunctionType) or not isinstance(obj, type):
                 raise ValueError(f"expected: class reference; got: {obj} of type {type(obj)}")
             return self._class_link(obj, context)
 
         def _replace_func_ref(m: re.Match[str]) -> str:
             ref: str = m.group(1)
-            obj = resolver.evaluate(ref)
+            obj: Any = resolver.evaluate(ref)
             if not isinstance(obj, FunctionType):
                 raise ValueError(f"expected: function reference; got: {obj} of type {type(obj)}")
             return self._function_link(obj, context)
@@ -579,10 +587,7 @@ class MarkdownGenerator:
         "Writes Markdown output for a single Python function."
 
         docstring = parse_type(function)
-
         description = docstring.full_description
-        if not description:
-            return
 
         signature = inspect.signature(function)
         func_params: list[str] = []
@@ -602,8 +607,9 @@ class MarkdownGenerator:
         w.print(f"### {self._heading_anchor(function_anchor(function), title)}")
         w.print()
 
-        w.print(self._transform_text(description, signature_resolver, context))
-        w.print()
+        if description:
+            w.print(self._transform_text(description, signature_resolver, context))
+            w.print()
 
         if docstring.params:
             w.print("**Parameters:**")
@@ -634,7 +640,12 @@ class MarkdownGenerator:
         "Writes Markdown output for Python member functions in a class."
 
         for _, func in inspect.getmembers(cls, lambda f: inspect.isfunction(f)):
+            # skip private functions
             if not self.options.include_private and is_private(func):
+                continue
+
+            # skip functions without documentation
+            if not self.options.include_undocumented and not is_documented(func):
                 continue
 
             module = sys.modules[func.__module__]
@@ -769,6 +780,8 @@ class MarkdownGenerator:
             functions = get_module_functions(module)
             if not self.options.include_private:
                 functions = [fn for fn in functions if not is_private(fn)]
+            if not self.options.include_undocumented:
+                functions = [fn for fn in functions if is_documented(fn)]
             if functions:
                 anchor = f"{safe_id(module.__name__)}-functions"
                 anchored_title = self._heading_anchor(anchor, "Functions")

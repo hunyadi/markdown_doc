@@ -30,7 +30,7 @@ class Resolver(abc.ABC):
                     return typing.cast(type, module)
                 prefix = f"{name}."
                 if ref.startswith(prefix):
-                    return eval(ref.removeprefix(prefix), module.__dict__, locals())
+                    return typing.cast(type, eval(ref.removeprefix(prefix), module.__dict__, locals()))
         except NameError:
             pass
 
@@ -42,7 +42,7 @@ class ModuleResolver(Resolver):
 
     module: ModuleType
 
-    def __init__(self, module: ModuleType):
+    def __init__(self, module: ModuleType) -> None:
         super().__init__()
         self.module = module
 
@@ -53,7 +53,7 @@ class ModuleResolver(Resolver):
 
         try:
             # evaluate as module-local reference
-            return eval(ref, self.module.__dict__, locals())
+            return typing.cast(type, eval(ref, self.module.__dict__, locals()))
         except NameError:
             pass
 
@@ -72,7 +72,7 @@ class ModuleFunctionResolver(ModuleResolver):
 
     function: FunctionType
 
-    def __init__(self, function: FunctionType):
+    def __init__(self, function: FunctionType) -> None:
         super().__init__(sys.modules[function.__module__])
         self.function = function  # type: ignore
 
@@ -89,7 +89,7 @@ class ClassResolver(Resolver):
 
     cls: type
 
-    def __init__(self, cls: type):
+    def __init__(self, cls: type) -> None:
         super().__init__()
         self.cls = cls
 
@@ -101,13 +101,13 @@ class ClassResolver(Resolver):
         try:
             # evaluate as module-local reference
             module = sys.modules[self.cls.__module__]
-            return eval(ref, module.__dict__, locals())
+            return typing.cast(type, eval(ref, module.__dict__, locals()))
         except NameError:
             pass
 
         try:
             # evaluate as class-local reference
-            return eval(ref, dict(self.cls.__dict__), locals())
+            return typing.cast(type, eval(ref, dict(self.cls.__dict__), locals()))
         except NameError:
             pass
 
@@ -126,7 +126,7 @@ class MemberResolver(ClassResolver):
 
     member_name: str
 
-    def __init__(self, cls: type, member_name: str):
+    def __init__(self, cls: type, member_name: str) -> None:
         super().__init__(cls)
         self.member_name = member_name
 
@@ -145,7 +145,7 @@ class MemberFunctionResolver(ClassResolver):
 
     function: MethodType
 
-    def __init__(self, cls: type, function: MethodType):
+    def __init__(self, cls: type, function: MethodType) -> None:
         super().__init__(cls)
         self.function = function
 
