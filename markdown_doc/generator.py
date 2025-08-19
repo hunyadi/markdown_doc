@@ -310,6 +310,18 @@ def function_link(fn: FunctionType, context: Context) -> str:
     return _class_link(fn, context)
 
 
+def _extract_ref(text: str) -> str:
+    "Extracts a fully-qualified reference from a reference string possibly with a custom label included."
+
+    regex = re.compile(r"^[^<>]+<([^<>]+)>$")
+    if (m := regex.match(text)) is not None:
+        # :class:`HTTPAdapter <requests.adapters.HTTPAdapter>`
+        return m.group(1)
+    else:
+        # :class:`HTTPAdapter`
+        return text
+
+
 def is_private(cls: ObjectType) -> bool:
     "True if the class or function is private to the module."
 
@@ -474,21 +486,21 @@ class MarkdownGenerator:
         "Replaces references in module, class or parameter doc-string text."
 
         def _replace_module_ref(m: re.Match[str]) -> str:
-            ref: str = m.group(1)
+            ref: str = _extract_ref(m.group(1))
             obj: Any = resolver.evaluate(ref)
             if not isinstance(obj, ModuleType):
                 raise ValueError(f"expected: module reference; got: {obj} of type {type(obj)}")
             return self._module_link(obj, context)
 
         def _replace_class_ref(m: re.Match[str]) -> str:
-            ref: str = m.group(1)
+            ref = _extract_ref(m.group(1))
             obj: Any = resolver.evaluate(ref)
             if isinstance(obj, ModuleType) or isinstance(obj, FunctionType) or not isinstance(obj, type):
                 raise ValueError(f"expected: class reference; got: {obj} of type {type(obj)}")
             return self._class_link(obj, context)
 
         def _replace_func_ref(m: re.Match[str]) -> str:
-            ref: str = m.group(1)
+            ref: str = _extract_ref(m.group(1))
             obj: Any = resolver.evaluate(ref)
             if not isinstance(obj, FunctionType):
                 raise ValueError(f"expected: function reference; got: {obj} of type {type(obj)}")
@@ -639,7 +651,11 @@ class MarkdownGenerator:
     def _generate_functions(self, cls: type, fmt: TypeFormatter, w: MarkdownWriter) -> None:
         "Writes Markdown output for Python member functions in a class."
 
-        for _, func in inspect.getmembers(cls, lambda f: inspect.isfunction(f)):
+        for name, func in inspect.getmembers(cls, lambda f: inspect.isfunction(f)):
+            # skip inherited functions (unless overridden)
+            if name not in cls.__dict__:
+                continue
+
             # skip private functions
             if not self.options.include_private and is_private(func):
                 continue
