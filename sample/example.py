@@ -6,7 +6,7 @@ import enum
 import sys
 import typing
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal, Optional, Union
 
 from strong_typing.auxiliary import int8, int16, uint32, uint64
@@ -65,10 +65,44 @@ class PlainClass:
     """
     A plain class.
 
-    :param timestamp: A member variable of type `datetime`.
+    The factory function :meth:`create` returns a new instance of this class.
+
+    :param timestamp: A member variable of type `datetime` (in UTC).
     """
 
     timestamp: datetime
+
+    def __init__(self, timestamp: datetime) -> None:
+        self.timestamp = timestamp
+
+    @classmethod
+    def create(cls) -> "PlainClass":
+        """
+        This factory function creates a new instance of this class.
+        """
+
+        return PlainClass(datetime.now(tz=timezone.utc))
+
+    def to_json(self) -> "JsonType":
+        """
+        Serializes the data to JSON.
+
+        :returns: A JSON object.
+        """
+
+        return {"timestamp": self.timestamp.isoformat()}
+
+    @staticmethod
+    def from_json(obj: "JsonType") -> "PlainClass":
+        """
+        De-serializes the data from JSON.
+
+        :param obj: A JSON object.
+        :returns: An instance of this class.
+        """
+
+        o = typing.cast(dict[str, JsonType], obj)
+        return PlainClass(timestamp=datetime.fromisoformat(typing.cast(str, o["timestamp"])))
 
 
 @dataclass
@@ -76,9 +110,11 @@ class SampleClass:
     """
     A data-class with several member variables.
 
-    This class is extended by :class:`DerivedClass`.
+    This class is extended by a :class:`derived class <DerivedClass>`.
 
     This class implements total ordering with :meth:`__lt__`, :meth:`SampleClass.__le__`, :meth:`SampleClass.__ge__` and :meth:`__gt__`.
+
+    Serialization is provided by the function :meth:`to_json`, deserialization is achieved via the factory function :meth:`from_json`.
 
     Class doc-strings can include code blocks.
 

@@ -15,8 +15,8 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from types import FunctionType, ModuleType
-from typing import Any, Callable
+from types import FunctionType, MethodType, ModuleType
+from typing import Any, Callable, TypeGuard
 
 from strong_typing.docstring import DocstringSeeAlso, check_docstring, parse_type
 from strong_typing.inspection import DataclassInstance, get_module_classes, get_module_functions, is_dataclass_type, is_type_enum
@@ -172,6 +172,15 @@ def module_path(target: str, source: str) -> str:
     return (relative_path / target_path.name).as_posix()
 
 
+CallableType = Callable[..., Any]
+
+
+def is_function(fn: Any) -> TypeGuard[CallableType]:
+    "Identifies module-level functions, class member functions, functions with `@classmethod` and `@staticmethod`."
+
+    return isinstance(fn, FunctionType) or isinstance(fn, MethodType) or isinstance(fn, classmethod) or isinstance(fn, staticmethod)
+
+
 @enum.unique
 class ObjectKind(enum.Enum):
     "Represents a group of Python types, e.g. regular classes, data-classes, enumerations, module-level functions, etc."
@@ -192,7 +201,7 @@ class ObjectKind(enum.Enum):
     "Group for modules."
 
 
-ObjectType = type | FunctionType
+ObjectType = type | CallableType
 
 
 def object_kind(cls: ObjectType | ModuleType) -> ObjectKind:
@@ -200,7 +209,7 @@ def object_kind(cls: ObjectType | ModuleType) -> ObjectKind:
 
     if isinstance(cls, ModuleType):
         return ObjectKind.MODULE
-    elif isinstance(cls, FunctionType):
+    elif isinstance(cls, FunctionType):  # module-level function
         return ObjectKind.FUNCTION
     elif is_dataclass_type(cls):
         return ObjectKind.DATACLASS
@@ -255,21 +264,21 @@ class Context:
 def module_anchor(module: ModuleType) -> str:
     "Module anchor within a Markdown file."
 
-    assert isinstance(module, ModuleType), "expected: module reference"
+    assert isinstance(module, ModuleType), f"expected: module reference; got: {type(module).__name__}"
     return safe_id(module.__name__)
 
 
 def module_link(module: ModuleType, context: Context) -> str:
     "Markdown link with a fully-qualified module reference."
 
-    assert isinstance(module, ModuleType), "expected: module reference"
+    assert isinstance(module, ModuleType), f"expected: module reference; got: {type(module).__name__}"
     return f"[{module.__name__}]({context.path_to(module)}#{safe_id(module.__name__)})"
 
 
 def class_anchor(cls: type) -> str:
     "Class function anchor within a Markdown file."
 
-    assert not isinstance(cls, ModuleType) and not isinstance(cls, FunctionType), "expected: class reference"  # type: ignore[unreachable]
+    assert not isinstance(cls, ModuleType) and not is_function(cls), f"expected: class reference; got: {type(cls).__name__}"  # type: ignore[unreachable]
     return safe_id(f"{cls.__module__}.{cls.__qualname__}")
 
 
@@ -292,21 +301,21 @@ def _class_link(cls: ObjectType, context: Context) -> str:
 def class_link(cls: type, context: Context) -> str:
     "Markdown link with a partially- or fully-qualified class reference."
 
-    assert not isinstance(cls, ModuleType) and not isinstance(cls, FunctionType), "expected: class reference"  # type: ignore[unreachable]
+    assert not isinstance(cls, ModuleType) and not is_function(cls), f"expected: class reference; got: {type(cls).__name__}"  # type: ignore[unreachable]
     return _class_link(cls, context)
 
 
-def function_anchor(fn: FunctionType) -> str:
+def function_anchor(fn: CallableType) -> str:
     "Function anchor within a Markdown file."
 
-    assert isinstance(fn, FunctionType), "expected: function reference"
+    assert is_function(fn), f"expected: function reference; got: {type(fn).__name__}"
     return safe_id(f"{fn.__module__}.{fn.__qualname__}")
 
 
-def function_link(fn: FunctionType, context: Context) -> str:
+def function_link(fn: CallableType, context: Context) -> str:
     "Markdown link with a partially- or fully-qualified function reference."
 
-    assert isinstance(fn, FunctionType), "expected: function reference"
+    assert is_function(fn), f"expected: function reference; got: {type(fn).__name__}"
     return _class_link(fn, context)
 
 
@@ -473,7 +482,7 @@ class MarkdownGenerator:
         else:
             return safe_name(cls.__name__)
 
-    def _function_link(self, fn: FunctionType, context: Context) -> str:
+    def _function_link(self, fn: CallableType, context: Context) -> str:
         "Creates a link to a function if it is part of the exported batch."
 
         module = sys.modules[fn.__module__]
@@ -495,14 +504,14 @@ class MarkdownGenerator:
         def _replace_class_ref(m: re.Match[str]) -> str:
             ref = _extract_ref(m.group(1))
             obj: Any = resolver.evaluate(ref)
-            if isinstance(obj, ModuleType) or isinstance(obj, FunctionType) or not isinstance(obj, type):
+            if isinstance(obj, ModuleType) or is_function(obj) or not isinstance(obj, type):
                 raise ValueError(f"expected: class reference; got: {obj} of type {type(obj)}")
             return self._class_link(obj, context)
 
         def _replace_func_ref(m: re.Match[str]) -> str:
             ref: str = _extract_ref(m.group(1))
             obj: Any = resolver.evaluate(ref)
-            if not isinstance(obj, FunctionType):
+            if not is_function(obj):
                 raise ValueError(f"expected: function reference; got: {obj} of type {type(obj)}")
             return self._function_link(obj, context)
 
@@ -589,7 +598,7 @@ class MarkdownGenerator:
 
     def _generate_function(
         self,
-        function: FunctionType,
+        function: CallableType,
         signature_resolver: Resolver,
         param_resolver: Resolver,
         context: Context,
@@ -651,7 +660,7 @@ class MarkdownGenerator:
     def _generate_functions(self, cls: type, fmt: TypeFormatter, w: MarkdownWriter) -> None:
         "Writes Markdown output for Python member functions in a class."
 
-        for name, func in inspect.getmembers(cls, lambda f: inspect.isfunction(f)):
+        for name, func in inspect.getmembers(cls, lambda f: is_function(f)):
             # skip inherited functions (unless overridden)
             if name not in cls.__dict__:
                 continue
