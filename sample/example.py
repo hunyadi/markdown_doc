@@ -5,15 +5,19 @@ This is a module with sample Python classes, exceptions, functions, etc.
 import enum
 import sys
 import typing
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, ParamSpec, TypeVar, Union
 
 from strong_typing.auxiliary import int8, int16, uint32, uint64
 from strong_typing.core import JsonType, Schema
 from strong_typing.inspection import extend_enum
 
 SimpleType = bool | int | float | str
+
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 @enum.unique
@@ -323,6 +327,12 @@ class Skipped:
     ignore = True
 
 
+def decorator(fn: Callable[P, R]) -> Callable[P, R]:
+    "This is a decorator function."
+
+    return fn
+
+
 def send_message(
     sender: str,
     recipient: str,
@@ -341,6 +351,19 @@ def send_message(
     :returns: The message identifier.
     """
     return 23
+
+
+async def listen() -> None:
+    """
+    Listens for incoming connections.
+
+    This function references several other entities:
+
+    * the function :func:`send_message`
+    * the class :class:`PlainClass`
+    * the decorator :deco:`decorator`
+    * the exception :exc:`MyException`
+    """
 
 
 if __name__ == "__main__":

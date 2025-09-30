@@ -282,7 +282,7 @@ def class_anchor(cls: type) -> str:
     return safe_id(f"{cls.__module__}.{cls.__qualname__}")
 
 
-def _class_link(cls: ObjectType, context: Context) -> str:
+def _class_link(cls: ObjectType, context: Context, text: str | None = None) -> str:
     "Markdown link with a partially- or fully-qualified class or function reference."
 
     qualname = f"{cls.__module__}.{cls.__qualname__}"
@@ -295,7 +295,9 @@ def _class_link(cls: ObjectType, context: Context) -> str:
         # non-local reference
         link = f"{context.path_to(cls)}{local_link}"
 
-    return f"[{safe_name(cls.__name__)}]({link})"
+    if text is None:
+        text = cls.__name__
+    return f"[{safe_name(text)}]({link})"
 
 
 def class_link(cls: type, context: Context) -> str:
@@ -317,6 +319,13 @@ def function_link(fn: CallableType, context: Context) -> str:
 
     assert is_function(fn), f"expected: function reference; got: {type(fn).__name__}"
     return _class_link(fn, context)
+
+
+def decorator_link(fn: CallableType, context: Context) -> str:
+    "Markdown link with a partially- or fully-qualified decorator function reference."
+
+    assert is_function(fn), f"expected: function reference; got: {type(fn).__name__}"
+    return _class_link(fn, context, text=f"@{fn.__name__}")
 
 
 def _extract_ref(text: str) -> str:
@@ -469,6 +478,9 @@ class MarkdownGenerator:
         "Creates a link to a class if it is part of the exported batch."
 
         if cls.__module__ == "builtins":
+            if issubclass(cls, BaseException):
+                return f"[{cls.__name__}](https://docs.python.org/3/library/exceptions.html#{cls.__name__})"
+
             # built-in type such as `bool`, `int` or `str`
             return cls.__name__
         elif self.options.stdlib_links and (cls.__module__ in sys.builtin_module_names or cls.__module__ in sys.stdlib_module_names):
@@ -481,6 +493,15 @@ class MarkdownGenerator:
             return class_link(cls, context)
         else:
             return safe_name(cls.__name__)
+
+    def _decorator_link(self, fn: CallableType, context: Context) -> str:
+        "Creates a link to a decorator function if it is part of the exported batch."
+
+        module = sys.modules[fn.__module__]
+        if module in self.modules:
+            return decorator_link(fn, context)
+        else:
+            return f"@{safe_name(fn.__name__)}"
 
     def _function_link(self, fn: CallableType, context: Context) -> str:
         "Creates a link to a function if it is part of the exported batch."
@@ -508,6 +529,13 @@ class MarkdownGenerator:
                 raise ValueError(f"expected: class reference; got: {obj} of type {type(obj)}")
             return self._class_link(obj, context)
 
+        def _replace_deco_ref(m: re.Match[str]) -> str:
+            ref: str = _extract_ref(m.group(1))
+            obj: Any = resolver.evaluate(ref)
+            if not is_function(obj):
+                raise ValueError(f"expected: decorator reference; got: {obj} of type {type(obj)}")
+            return self._decorator_link(obj, context)
+
         def _replace_func_ref(m: re.Match[str]) -> str:
             ref: str = _extract_ref(m.group(1))
             obj: Any = resolver.evaluate(ref)
@@ -520,6 +548,15 @@ class MarkdownGenerator:
 
         regex = re.compile(r":class:`([^`]+)`")
         text = regex.sub(_replace_class_ref, text)
+
+        regex = re.compile(r":exc:`([^`]+)`")
+        text = regex.sub(_replace_class_ref, text)
+
+        regex = re.compile(r":deco:`([^`]+)`")
+        text = regex.sub(_replace_deco_ref, text)
+
+        regex = re.compile(r":func:`([^`]+)`")
+        text = regex.sub(_replace_func_ref, text)
 
         regex = re.compile(r":meth:`([^`]+)`")
         text = regex.sub(_replace_func_ref, text)

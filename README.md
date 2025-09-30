@@ -16,7 +16,7 @@ This library generates Markdown documentation directly from Python code, utilizi
 
 ## Documentation features
 
-Cross-references with Sphinx-style syntax (`:mod:`, `:class:` and `:meth:`) are supported in module, class and function doc-strings:
+Cross-references with Sphinx-style syntax are supported in module, class and function doc-strings:
 
 ```python
 @dataclass
@@ -27,6 +27,15 @@ class SampleClass:
     This class implements :meth:`__lt__` and :meth:`SampleClass.__gt__`.
     """
 ```
+
+The following Sphinx-style cross-references are recognized:
+
+* `:mod:` for a module
+* `:class:` for a regular class
+* `:exc:` for an exception class
+* `:deco:` for a decorator function
+* `:func:` for a function defined at the module level
+* `:meth:` for a method of a class
 
 Class member variable and data-class field descriptions are defined with `:param ...:`:
 
