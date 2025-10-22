@@ -19,7 +19,7 @@ from types import FunctionType, MethodType, ModuleType
 from typing import Any, Callable, TypeGuard
 
 from strong_typing.docstring import DocstringSeeAlso, check_docstring, parse_type
-from strong_typing.inspection import DataclassInstance, get_module_classes, get_module_functions, is_dataclass_type, is_type_enum
+from strong_typing.inspection import DataclassInstance, TypeLike, get_module_classes, get_module_functions, is_dataclass_type, is_type_enum
 from strong_typing.name import TypeFormatter
 
 from .docstring import enum_labels
@@ -427,6 +427,32 @@ class ProcessingError(RuntimeError):
         self.obj = obj
 
 
+class MarkdownTypeFormatter:
+    "Generates a safe Markdown string from a Python type."
+
+    formatter: TypeFormatter
+
+    def __init__(self, module: ModuleType, type_transform: Callable[[type], str]) -> None:
+        """
+        Creates a type formatter.
+
+        :param module: The module in whose context forward references are evaluated.
+        :param type_transform: Transformation to apply to types before a string is emitted, e.g. to create a link in a documentation.
+        """
+
+        self.formatter = TypeFormatter(
+            context=module,
+            type_transform=type_transform,
+            value_transform=quote_value,
+            use_union_operator=True,
+        )
+
+    def type_to_markdown(self, data_type: TypeLike) -> str:
+        "Emits a safe Markdown string for a data type."
+
+        return self.formatter.python_type_to_str(data_type).replace("[[", "[&#x200B;[").replace("]]", "]&#x200B;]")
+
+
 class MarkdownGenerator:
     "Generates Markdown documentation for a list of modules."
 
@@ -639,7 +665,7 @@ class MarkdownGenerator:
         signature_resolver: Resolver,
         param_resolver: Resolver,
         context: Context,
-        fmt: TypeFormatter,
+        fmt: MarkdownTypeFormatter,
         w: MarkdownWriter,
     ) -> None:
         "Writes Markdown output for a single Python function."
@@ -651,13 +677,13 @@ class MarkdownGenerator:
         func_params: list[str] = []
         for param_name, param in signature.parameters.items():
             if param.annotation is not inspect.Signature.empty:
-                param_type = fmt.python_type_to_str(param.annotation)
+                param_type = fmt.type_to_markdown(param.annotation)
                 func_params.append(f"{param_name}: {param_type}")
             else:
                 func_params.append(param_name)
         param_list = ", ".join(func_params)
         if signature.return_annotation is not inspect.Signature.empty:
-            function_returns = fmt.python_type_to_str(signature.return_annotation)
+            function_returns = fmt.type_to_markdown(signature.return_annotation)
             returns = f" → {function_returns}"
         else:
             returns = ""
@@ -677,7 +703,7 @@ class MarkdownGenerator:
                 param_item = f"**{safe_name(param_name)}**"
                 param_desc = self._transform_text(docstring_param.description, param_resolver, context)
                 if docstring_param.param_type is not inspect.Signature.empty:
-                    param_type = fmt.python_type_to_str(docstring_param.param_type)
+                    param_type = fmt.type_to_markdown(docstring_param.param_type)
                     w.print(f"* {param_item} ({param_type}) - {param_desc}")
                 else:
                     w.print(f"* {param_item} - {param_desc}")
@@ -686,7 +712,7 @@ class MarkdownGenerator:
         if docstring.returns:
             returns_desc = self._transform_text(docstring.returns.description, param_resolver, context)
             if docstring.returns.return_type is not inspect.Signature.empty:
-                return_type = fmt.python_type_to_str(docstring.returns.return_type)
+                return_type = fmt.type_to_markdown(docstring.returns.return_type)
                 w.print(f"**Returns:** ({return_type}) - {returns_desc}")
             else:
                 w.print(f"**Returns:** {returns_desc}")
@@ -694,7 +720,7 @@ class MarkdownGenerator:
 
         self._generate_references(docstring.see_also, w)
 
-    def _generate_functions(self, cls: type, fmt: TypeFormatter, w: MarkdownWriter) -> None:
+    def _generate_functions(self, cls: type, fmt: MarkdownTypeFormatter, w: MarkdownWriter) -> None:
         "Writes Markdown output for Python member functions in a class."
 
         for name, func in inspect.getmembers(cls, lambda f: is_function(f)):
@@ -712,7 +738,7 @@ class MarkdownGenerator:
 
             module = sys.modules[func.__module__]
             context = self._create_context(module, ObjectKind.CLASS)
-            self._generate_function(func, ClassResolver(cls), MemberFunctionResolver(cls, func), context, fmt, w)
+            self._generate_function(func, ClassResolver(cls), MemberFunctionResolver(cls, func), context, fmt, w)  # pyright: ignore[reportArgumentType]
 
     def _generate_class(self, cls: type, w: MarkdownWriter) -> None:
         "Writes Markdown output for a single (regular) Python class."
@@ -722,12 +748,7 @@ class MarkdownGenerator:
         module = sys.modules[cls.__module__]
         context = self._create_context(module, ObjectKind.CLASS)
 
-        fmt = TypeFormatter(
-            context=module,
-            type_transform=lambda c: self._class_link(c, context),
-            value_transform=quote_value,
-            use_union_operator=True,
-        )
+        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context))
 
         docstring = parse_type(cls)
         description = docstring.full_description
@@ -747,12 +768,7 @@ class MarkdownGenerator:
         module = sys.modules[cls.__module__]
         context = self._create_context(module, ObjectKind.DATACLASS)
 
-        fmt = TypeFormatter(
-            context=module,
-            type_transform=lambda c: self._class_link(c, context),
-            value_transform=quote_value,
-            use_union_operator=True,
-        )
+        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context))
 
         docstring = parse_type(cls)
         if docstring.short_description or docstring.params:
@@ -767,7 +783,7 @@ class MarkdownGenerator:
             w.print()
 
             for name, docstring_param in docstring.params.items():
-                param_type = fmt.python_type_to_str(docstring_param.param_type)
+                param_type = fmt.type_to_markdown(docstring_param.param_type)
                 param_desc = self._transform_text(docstring_param.description, MemberResolver(cls, name), context)
                 w.print(f"* **{safe_name(name)}** ({param_type}) - {param_desc}")
             w.print()
@@ -780,12 +796,7 @@ class MarkdownGenerator:
         "Writes Markdown output for a single Python module."
 
         context = self._create_context(module, ObjectKind.MODULE)
-        fmt = TypeFormatter(
-            context=module,
-            type_transform=lambda c: self._class_link(c, context),
-            value_transform=quote_value,
-            use_union_operator=True,
-        )
+        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context))
 
         header = MarkdownWriter()
         module_name = module.__name__.split(".")[-1]
@@ -815,7 +826,7 @@ class MarkdownGenerator:
                 elif is_type_enum(cls):
                     if partition is not ObjectKind.ENUM:
                         continue
-                elif isinstance(cls, type):
+                elif isinstance(cls, type):  # pyright: ignore[reportUnnecessaryIsInstance]
                     if partition is not ObjectKind.CLASS:
                         continue
 
@@ -827,7 +838,7 @@ class MarkdownGenerator:
                     self._generate_dataclass(cls, w)
                 elif is_type_enum(cls):
                     self._generate_enum(cls, w)
-                elif isinstance(cls, type):
+                elif isinstance(cls, type):  # pyright: ignore[reportUnnecessaryIsInstance]
                     self._generate_class(cls, w)
                 else:
                     raise TypeError(f"expected: data-class, enum class or regular class; got: {cls}")

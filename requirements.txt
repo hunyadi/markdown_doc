@@ -1,7 +1,0 @@
-# production dependencies
-json_strong_typing >= 0.3.8
-
-# development dependencies
-build
-mypy
-ruff
