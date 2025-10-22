@@ -14,6 +14,11 @@ from strong_typing.auxiliary import int8, int16, uint32, uint64
 from strong_typing.core import JsonType, Schema
 from strong_typing.inspection import extend_enum
 
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
+
 SimpleType = bool | int | float | str
 
 P = ParamSpec("P")
@@ -80,12 +85,19 @@ class PlainClass:
         self.timestamp = timestamp
 
     @classmethod
-    def create(cls) -> "PlainClass":
+    def create(cls) -> Self:
         """
         This factory function creates a new instance of this class.
         """
 
-        return PlainClass(datetime.now(tz=timezone.utc))
+        return cls(datetime.now(tz=timezone.utc))
+
+    def equals(self, other: Self) -> bool:
+        """
+        Checks whether the two instances are equal.
+        """
+
+        return self.timestamp == other.timestamp
 
     def to_json(self) -> "JsonType":
         """

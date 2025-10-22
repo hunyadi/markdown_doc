@@ -70,7 +70,7 @@ def enum_action(enum_type: type[enum.Enum]) -> type[argparse.Action]:
     :param enum_type: The enumeration type to create the action for.
     """
 
-    if not issubclass(enum_type, enum.Enum):
+    if not issubclass(enum_type, enum.Enum):  # pyright: ignore[reportUnnecessaryIsInstance]
         raise TypeError("expected: enumeration type")
 
     class EnumAction(argparse.Action):
@@ -133,7 +133,7 @@ def enum_action(enum_type: type[enum.Enum]) -> type[argparse.Action]:
             vals = typing.cast(EnumValue | Sequence[EnumValue] | None, values)
             if isinstance(vals, Sequence):
                 for val in vals:
-                    if not isinstance(val, EnumValue):
+                    if not isinstance(val, EnumValue):  # pyright: ignore[reportUnnecessaryIsInstance]
                         raise TypeError(f"expected: instance of `{EnumValue.__name__}`; got: `{type(val).__name__}`")
                     setattr(namespace, self.dest, val.enum_value)
             else:
