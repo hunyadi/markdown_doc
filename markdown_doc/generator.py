@@ -12,17 +12,19 @@ import logging
 import os
 import re
 import sys
-from dataclasses import dataclass
+import typing
+from dataclasses import dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
 from types import FunctionType, MethodType, ModuleType
 from typing import Any, Callable, TypeGuard
 
-from strong_typing.docstring import DocstringSeeAlso, check_docstring, parse_type
-from strong_typing.inspection import DataclassInstance, TypeLike, get_module_classes, get_module_functions, is_dataclass_type, is_type_enum
+from docsource.docstring import DocstringSeeAlso, check_docstring, parse_type
+from docsource.enumeration import enum_labels
+from docsource.inspection import get_module_classes, get_module_functions, is_type_enum
+from strong_typing.inspection import TypeLike
 from strong_typing.name import TypeFormatter
 
-from .docstring import enum_labels
 from .resolver import ClassResolver, MemberFunctionResolver, MemberResolver, ModuleFunctionResolver, ModuleResolver, Resolver
 
 
@@ -211,10 +213,10 @@ def object_kind(cls: ObjectType | ModuleType) -> ObjectKind:
         return ObjectKind.MODULE
     elif isinstance(cls, FunctionType):  # module-level function
         return ObjectKind.FUNCTION
-    elif is_dataclass_type(cls):
-        return ObjectKind.DATACLASS
     elif is_type_enum(cls):
         return ObjectKind.ENUM
+    elif is_dataclass(cls):
+        return ObjectKind.DATACLASS
     else:
         return ObjectKind.CLASS
 
@@ -760,7 +762,7 @@ class MarkdownGenerator:
 
         self._generate_functions(cls, fmt, w)
 
-    def _generate_dataclass(self, cls: type[DataclassInstance], w: MarkdownWriter) -> None:
+    def _generate_dataclass(self, cls: type, w: MarkdownWriter) -> None:
         "Writes Markdown output for a single Python data-class."
 
         self._generate_bases(cls, w)
@@ -820,29 +822,33 @@ class MarkdownGenerator:
 
             # check whether the current object is to be exported
             if partition is not None:
-                if is_dataclass_type(cls):
-                    if partition is not ObjectKind.DATACLASS:
-                        continue
-                elif is_type_enum(cls):
+                if is_type_enum(cls):
                     if partition is not ObjectKind.ENUM:
                         continue
-                elif isinstance(cls, type):  # pyright: ignore[reportUnnecessaryIsInstance]
+                elif is_dataclass(cls):
+                    if partition is not ObjectKind.DATACLASS:
+                        continue
+                elif isinstance(cls, type):
                     if partition is not ObjectKind.CLASS:
                         continue
+
+            # required to suppress type checker warnings
+            cls = typing.cast(type, cls)  # type: ignore[redundant-cast]
 
             w.print(f"## {self._heading_anchor(class_anchor(cls), safe_name(cls.__name__))}")
             w.print()
 
             try:
-                if is_dataclass_type(cls):
-                    self._generate_dataclass(cls, w)
-                elif is_type_enum(cls):
+                if is_type_enum(cls):
                     self._generate_enum(cls, w)
-                elif isinstance(cls, type):  # pyright: ignore[reportUnnecessaryIsInstance]
+                elif is_dataclass(cls):
+                    self._generate_dataclass(cls, w)
+                elif isinstance(cls, type):
                     self._generate_class(cls, w)
                 else:
                     raise TypeError(f"expected: data-class, enum class or regular class; got: {cls}")
             except Exception as e:
+                cls = typing.cast(type, cls)  # type: ignore[redundant-cast]
                 raise ProcessingError(
                     f"error while processing type `{cls.__name__}` in module `{module.__name__}`",
                     obj=cls,

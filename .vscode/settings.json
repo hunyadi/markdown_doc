@@ -16,6 +16,7 @@
     },
     "python.analysis.typeCheckingMode": "strict",
     "cSpell.words": [
+        "docsource",
         "GitBook",
         "Hunyadi",
         "Levente",
