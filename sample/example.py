@@ -15,9 +15,9 @@ from strong_typing.core import JsonType, Schema
 from strong_typing.inspection import extend_enum
 
 if sys.version_info >= (3, 11):
-    from typing import Self
+    from typing import LiteralString, Self
 else:
-    from typing_extensions import Self
+    from typing_extensions import LiteralString, Self
 
 SimpleType = bool | int | float | str
 
@@ -264,11 +264,13 @@ class LiteralValues:
     :param boolean: A member variable that assumes constants of type `bool`.
     :param integer: A member variable that assumes constants of type `int`.
     :param string: A member variable that assumes constants of type `float`.
+    :param constant: A member variable that is a literal string.
     """
 
     boolean: Literal[True, False]
     integer: Literal[1, 2, 3]
     string: Literal["a", "b", "c"]
+    constant: LiteralString
 
 
 @dataclass
