@@ -1,7 +1,7 @@
 """
 Generate Markdown documentation from Python code
 
-Copyright 2024-2025, Levente Hunyadi
+Copyright 2024-2026, Levente Hunyadi
 
 :see: https://github.com/hunyadi/markdown_doc
 """
@@ -13,7 +13,7 @@ import os
 import re
 import sys
 import typing
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass, field, is_dataclass
 from enum import Enum
 from pathlib import Path
 from types import FunctionType, MethodType, ModuleType
@@ -22,9 +22,8 @@ from typing import Any, Callable, TypeGuard
 from docsource.docstring import DocstringSeeAlso, check_docstring, parse_type
 from docsource.enumeration import enum_labels
 from docsource.inspection import get_module_classes, get_module_functions, is_type_enum
-from strong_typing.inspection import TypeLike
-from strong_typing.name import TypeFormatter
 
+from .formatter import TypeFormatter, TypeFormatterOptions
 from .resolver import ClassResolver, MemberFunctionResolver, MemberResolver, ModuleFunctionResolver, ModuleResolver, Resolver
 
 
@@ -406,6 +405,7 @@ class MarkdownOptions:
     :param include_private: Whether to include private classes, functions and methods.
     :param include_undocumented: Whether to include classes, functions and methods without a doc-string description.
     :param stdlib_links: Whether to include references for built-in types and types in the Python standard library.
+    :param auxiliary_types: Maps each Python type (typically `Annotated[T, ...]`) to a human-readable name.
     """
 
     anchor_style: MarkdownAnchorStyle = MarkdownAnchorStyle.GITHUB
@@ -413,6 +413,7 @@ class MarkdownOptions:
     include_private: bool = False
     include_undocumented: bool = False
     stdlib_links: bool = True
+    auxiliary_types: dict[object, str] = field(default_factory=dict[object, str])
 
 
 class ProcessingError(RuntimeError):
@@ -434,7 +435,7 @@ class MarkdownTypeFormatter:
 
     formatter: TypeFormatter
 
-    def __init__(self, module: ModuleType, type_transform: Callable[[type], str]) -> None:
+    def __init__(self, module: ModuleType, type_transform: Callable[[type], str], auxiliary_types: dict[object, str]) -> None:
         """
         Creates a type formatter.
 
@@ -443,13 +444,10 @@ class MarkdownTypeFormatter:
         """
 
         self.formatter = TypeFormatter(
-            context=module,
-            type_transform=type_transform,
-            value_transform=quote_value,
-            use_union_operator=True,
+            context=module, options=TypeFormatterOptions(type_transform=type_transform, value_transform=quote_value, auxiliary_types=auxiliary_types)
         )
 
-    def type_to_markdown(self, data_type: TypeLike) -> str:
+    def type_to_markdown(self, data_type: Any) -> str:
         "Emits a safe Markdown string for a data type."
 
         return self.formatter.python_type_to_str(data_type).replace("[[", "[&#x200B;[").replace("]]", "]&#x200B;]")
@@ -750,7 +748,7 @@ class MarkdownGenerator:
         module = sys.modules[cls.__module__]
         context = self._create_context(module, ObjectKind.CLASS)
 
-        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context))
+        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context), self.options.auxiliary_types)
 
         docstring = parse_type(cls)
         description = docstring.full_description
@@ -770,7 +768,7 @@ class MarkdownGenerator:
         module = sys.modules[cls.__module__]
         context = self._create_context(module, ObjectKind.DATACLASS)
 
-        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context))
+        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context), self.options.auxiliary_types)
 
         docstring = parse_type(cls)
         if docstring.short_description or docstring.params:
@@ -798,7 +796,7 @@ class MarkdownGenerator:
         "Writes Markdown output for a single Python module."
 
         context = self._create_context(module, ObjectKind.MODULE)
-        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context))
+        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context), self.options.auxiliary_types)
 
         header = MarkdownWriter()
         module_name = module.__name__.split(".")[-1]
@@ -833,25 +831,25 @@ class MarkdownGenerator:
                         continue
 
             # required to suppress type checker warnings
-            cls = typing.cast(type, cls)  # type: ignore[redundant-cast]
+            kls = typing.cast(type, cls)  # type: ignore[redundant-cast]
 
-            w.print(f"## {self._heading_anchor(class_anchor(cls), safe_name(cls.__name__))}")
+            w.print(f"## {self._heading_anchor(class_anchor(kls), safe_name(kls.__name__))}")
             w.print()
 
             try:
-                if is_type_enum(cls):
-                    self._generate_enum(cls, w)
-                elif is_dataclass(cls):
-                    self._generate_dataclass(cls, w)
-                elif isinstance(cls, type):
-                    self._generate_class(cls, w)
+                if is_type_enum(kls):
+                    self._generate_enum(kls, w)
+                elif is_dataclass(kls):
+                    self._generate_dataclass(kls, w)
+                elif isinstance(kls, type):
+                    self._generate_class(kls, w)
                 else:
-                    raise TypeError(f"expected: data-class, enum class or regular class; got: {cls}")
+                    raise TypeError(f"expected: data-class, enum class or regular class; got: {kls}")
             except Exception as e:
-                cls = typing.cast(type, cls)  # type: ignore[redundant-cast]
+                kls = typing.cast(type, cls)  # type: ignore[redundant-cast]
                 raise ProcessingError(
-                    f"error while processing type `{cls.__name__}` in module `{module.__name__}`",
-                    obj=cls,
+                    f"error while processing type `{kls.__name__}` in module `{module.__name__}`",
+                    obj=kls,
                 ) from e
 
         if partition is None or partition is ObjectKind.FUNCTION:

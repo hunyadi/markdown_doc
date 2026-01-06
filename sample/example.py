@@ -10,14 +10,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal, Optional, ParamSpec, TypeVar, Union
 
-from strong_typing.auxiliary import int8, int16, uint32, uint64
-from strong_typing.core import JsonType, Schema
-from strong_typing.inspection import extend_enum
+from .auxiliary import int8, int16, uint32, uint64
+from .enumeration import extend_enum
 
 if sys.version_info >= (3, 11):
     from typing import LiteralString, Self
 else:
     from typing_extensions import LiteralString, Self
+
+JsonType = None | bool | int | float | str | dict[str, "JsonType"] | list["JsonType"]
 
 SimpleType = bool | int | float | str
 
@@ -231,12 +232,10 @@ class DerivedClass(SampleClass):
 
     :param union: A union of several types.
     :param json: A complex type with type substitution.
-    :param schema: A complex type without type substitution.
     """
 
     union: SimpleType
     json: JsonType
-    schema: Schema
 
 
 @dataclass
