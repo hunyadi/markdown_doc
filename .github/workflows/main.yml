@@ -35,7 +35,7 @@ jobs:
       # Generate and publish PyPI package
       - name: Build PyPI package
         run: |
-          python -m build --sdist --wheel
+          python -m build
       - name: Save PyPI package as artifact
         uses: actions/upload-artifact@v4
         with:

@@ -1,14 +1,14 @@
 """
 Generate Markdown documentation from Python code
 
-Copyright 2024-2025, Levente Hunyadi
+Copyright 2024-2026, Levente Hunyadi
 
 :see: https://github.com/hunyadi/markdown_doc
 """
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 __author__ = "Levente Hunyadi"
-__copyright__ = "Copyright 2024-2025, Levente Hunyadi"
+__copyright__ = "Copyright 2024-2026, Levente Hunyadi"
 __license__ = "MIT"
 __maintainer__ = "Levente Hunyadi"
 __status__ = "Production"

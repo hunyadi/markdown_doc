@@ -17,13 +17,16 @@
     "python.analysis.typeCheckingMode": "strict",
     "cSpell.words": [
         "docsource",
+        "errorlevel",
         "GitBook",
         "Hunyadi",
         "Levente",
         "mobi",
         "mypy",
+        "PyPI",
         "setlocal",
         "setuptools",
+        "Sigstore",
         "stdlib",
         "topdown"
     ]
