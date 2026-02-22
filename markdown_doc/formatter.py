@@ -11,7 +11,7 @@ import typing
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType, UnionType
-from typing import Any, ForwardRef, Literal, ParamSpec, TypeVar, Union
+from typing import Any, ForwardRef, Literal, NewType, ParamSpec, TypeVar, Union
 
 if sys.version_info >= (3, 11):
     from typing import LiteralString as LiteralString
@@ -91,7 +91,7 @@ class TypeFormatterOptions:
     :param auxiliary_types: Maps each Python type (typically `Annotated[T, ...]`) to a human-readable name.
     """
 
-    type_transform: Callable[[type], str] | None
+    type_transform: Callable[[NewType | type[Any]], str] | None
     value_transform: Callable[[Any], str] | None
     auxiliary_types: dict[object, str]
 
@@ -178,9 +178,7 @@ class TypeFormatter:
                 return data_type
 
             return self.python_type_to_str(evaluate_type(data_type, self.context))
-        elif isinstance(data_type, ParamSpec):
-            return data_type.__name__
-        elif isinstance(data_type, TypeVar):
+        elif isinstance(data_type, (ParamSpec, TypeVar)):
             return data_type.__name__
 
         origin = typing.get_origin(data_type)
@@ -211,13 +209,13 @@ class TypeFormatter:
             args = ", ".join(self.python_type_to_str(t) for t in data_type_args)
             return f"{origin_name}[{args}]"
 
-        if not isinstance(data_type, type):
+        if not isinstance(data_type, (NewType, type)):
             raise ValueError(f"not a type, generic type, or type-like object: {data_type} (of type {type(data_type)})")
 
         if self.options.type_transform is not None:
             return self.options.type_transform(data_type)
         else:
-            return data_type.__name__
+            return data_type.__name__  # type: ignore[union-attr]
 
     def python_type_to_str(self, data_type: Any) -> str:
         "Returns the string representation of a Python type."

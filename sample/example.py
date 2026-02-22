@@ -8,7 +8,7 @@ import typing
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal, Optional, ParamSpec, TypeVar, Union
+from typing import Literal, NewType, Optional, ParamSpec, TypeVar, Union
 
 from .auxiliary import int8, int16, uint32, uint64
 from .enumeration import extend_enum
@@ -21,6 +21,8 @@ else:
 JsonType = None | bool | int | float | str | dict[str, "JsonType"] | list["JsonType"]
 
 SimpleType = bool | int | float | str
+
+MyNewType = NewType("MyNewType", str)
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -159,6 +161,7 @@ class SampleClass:
     :param double: A member variable of type `float`.
     :param string: A member variable of type `str`.
     :param enumeration: A member variable with an enumeration type.
+    :param value: A member variable of a compile-time distinct type.
     """
 
     boolean: bool
@@ -166,6 +169,7 @@ class SampleClass:
     double: float
     string: str
     enumeration: EnumType
+    value: MyNewType
 
     def __lt__(self, other: "SampleClass") -> bool:
         """
@@ -222,6 +226,7 @@ class SampleClass:
             double=typing.cast(float, o["double"]),
             string=typing.cast(str, o["string"]),
             enumeration=EnumType(o["enumeration"]),
+            value=MyNewType("value"),
         )
 
 
@@ -366,6 +371,9 @@ def send_message(
     return 23
 
 
+Payload = NewType("Payload", PlainClass)
+
+
 async def listen() -> None:
     """
     Listens for incoming connections.
@@ -374,6 +382,7 @@ async def listen() -> None:
 
     * the function :func:`send_message`
     * the class :class:`PlainClass`
+    * the new type :class:`Payload`
     * the decorator :deco:`decorator`
     * the exception :exc:`MyException`
     """

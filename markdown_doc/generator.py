@@ -17,7 +17,7 @@ from dataclasses import dataclass, field, is_dataclass
 from enum import Enum
 from pathlib import Path
 from types import FunctionType, MethodType, ModuleType
-from typing import Any, Callable, TypeGuard
+from typing import Any, Callable, NewType, TypeGuard
 
 from docsource.docstring import DocstringSeeAlso, check_docstring, parse_type
 from docsource.enumeration import enum_labels
@@ -123,6 +123,10 @@ def quote_value(value: Any) -> str:
         return f"```{s}```"
 
 
+def type_name(tp: NewType | type[Any]) -> str:
+    return tp.__name__  # type: ignore[union-attr]
+
+
 def safe_name(name: str) -> str:
     "Object name with those characters escaped that are allowed in Python identifiers but have special meaning in Markdown."
 
@@ -171,6 +175,20 @@ def module_path(target: str, source: str) -> str:
     else:
         relative_path = Path(os.path.relpath(target_dir, start=source_dir))
     return (relative_path / target_path.name).as_posix()
+
+
+def get_module_new_types(module: ModuleType) -> list[NewType]:
+    """
+    Returns all new types declared directly in a module.
+
+    :param module: The module to scan.
+    :returns: `NewType` instances declared in the specified module.
+    """
+
+    def is_type_member(member: object) -> TypeGuard[NewType]:
+        return isinstance(member, NewType) and member.__module__ == module.__name__
+
+    return [class_type for _, class_type in inspect.getmembers(module, is_type_member)]
 
 
 CallableType = Callable[..., Any]
@@ -277,10 +295,16 @@ def module_link(module: ModuleType, context: Context) -> str:
 
 
 def class_anchor(cls: type) -> str:
-    "Class function anchor within a Markdown file."
+    "Class anchor within a Markdown file."
 
     assert not isinstance(cls, ModuleType) and not is_function(cls), f"expected: class reference; got: {type(cls).__name__}"  # type: ignore[unreachable]
     return safe_id(f"{cls.__module__}.{cls.__qualname__}")
+
+
+def new_type_anchor(cls: NewType) -> str:
+    "New type anchor within a Markdown file."
+
+    return safe_id(f"{cls.__module__}.{type_name(cls)}")
 
 
 def _class_link(cls: ObjectType, context: Context, text: str | None = None) -> str:
@@ -306,6 +330,22 @@ def class_link(cls: type, context: Context) -> str:
 
     assert not isinstance(cls, ModuleType) and not is_function(cls), f"expected: class reference; got: {type(cls).__name__}"  # type: ignore[unreachable]
     return _class_link(cls, context)
+
+
+def new_type_link(cls: NewType, context: Context) -> str:
+    "Markdown link with a partially- or fully-qualified new type reference."
+
+    qualname = f"{cls.__module__}.{type_name(cls)}"
+    local_link = f"#{safe_id(qualname)}"
+
+    if context.matches(cls):
+        # local reference
+        link = local_link
+    else:
+        # non-local reference
+        link = f"{context.path_to(cls)}{local_link}"
+
+    return f"[{safe_name(type_name(cls))}]({link})"
 
 
 def function_anchor(fn: CallableType) -> str:
@@ -435,7 +475,7 @@ class MarkdownTypeFormatter:
 
     formatter: TypeFormatter
 
-    def __init__(self, module: ModuleType, type_transform: Callable[[type], str], auxiliary_types: dict[object, str]) -> None:
+    def __init__(self, module: ModuleType, type_transform: Callable[[NewType | type[Any]], str], auxiliary_types: dict[object, str]) -> None:
         """
         Creates a type formatter.
 
@@ -500,7 +540,17 @@ class MarkdownGenerator:
         else:
             return safe_name(module.__name__)
 
-    def _class_link(self, cls: type, context: Context) -> str:
+    def _type_link(self, cls: NewType | type[Any], context: Context) -> str:
+        if isinstance(cls, NewType):
+            module = sys.modules[cls.__module__]
+            if module in self.modules:
+                return new_type_link(cls, context)
+            else:
+                return safe_name(type_name(cls))
+        else:
+            return self._class_link(cls, context)
+
+    def _class_link(self, cls: type[Any], context: Context) -> str:
         "Creates a link to a class if it is part of the exported batch."
 
         if cls.__module__ == "builtins":
@@ -551,9 +601,9 @@ class MarkdownGenerator:
         def _replace_class_ref(m: re.Match[str]) -> str:
             ref = _extract_ref(m.group(1))
             obj: Any = resolver.evaluate(ref)
-            if isinstance(obj, ModuleType) or is_function(obj) or not isinstance(obj, type):
+            if isinstance(obj, ModuleType) or is_function(obj) or not isinstance(obj, (NewType, type)):
                 raise ValueError(f"expected: class reference; got: {obj} of type {type(obj)}")
-            return self._class_link(obj, context)
+            return self._type_link(obj, context)
 
         def _replace_deco_ref(m: re.Match[str]) -> str:
             ref: str = _extract_ref(m.group(1))
@@ -748,7 +798,7 @@ class MarkdownGenerator:
         module = sys.modules[cls.__module__]
         context = self._create_context(module, ObjectKind.CLASS)
 
-        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context), self.options.auxiliary_types)
+        fmt = MarkdownTypeFormatter(module, lambda c: self._type_link(c, context), self.options.auxiliary_types)
 
         docstring = parse_type(cls)
         description = docstring.full_description
@@ -768,7 +818,7 @@ class MarkdownGenerator:
         module = sys.modules[cls.__module__]
         context = self._create_context(module, ObjectKind.DATACLASS)
 
-        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context), self.options.auxiliary_types)
+        fmt = MarkdownTypeFormatter(module, lambda c: self._type_link(c, context), self.options.auxiliary_types)
 
         docstring = parse_type(cls)
         if docstring.short_description or docstring.params:
@@ -796,7 +846,7 @@ class MarkdownGenerator:
         "Writes Markdown output for a single Python module."
 
         context = self._create_context(module, ObjectKind.MODULE)
-        fmt = MarkdownTypeFormatter(module, lambda c: self._class_link(c, context), self.options.auxiliary_types)
+        fmt = MarkdownTypeFormatter(module, lambda c: self._type_link(c, context), self.options.auxiliary_types)
 
         header = MarkdownWriter()
         module_name = module.__name__.split(".")[-1]
@@ -811,6 +861,11 @@ class MarkdownGenerator:
         self._generate_references(docstring.see_also, header)
 
         w = MarkdownWriter()
+        for nt in get_module_new_types(module):
+            w.print(f"## {self._heading_anchor(new_type_anchor(nt), safe_name(type_name(nt)))}")
+            w.print()
+            w.print(f"**Supertype:** {self._type_link(nt.__supertype__, context)}")
+
         for cls in get_module_classes(module):
             if not self.options.include_private and is_private(cls):
                 continue
