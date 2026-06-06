@@ -141,6 +141,32 @@ class TypeFormatter:
 
         return " | ".join(self.python_type_to_str(t) for t in data_type_args)
 
+    def _named_reference_to_str(self, name: str) -> str:
+        """
+        Emits a reference given by name (an unevaluated string annotation or forward reference).
+
+        The name is resolved in the context module. If it resolves to a type, the type transform is applied (e.g. to
+        emit a documentation link); otherwise the name is evaluated and rendered as the resulting type. This keeps
+        bare string annotations (e.g. `field: MyClass`) and forward references (e.g. `Optional["MyClass"]`) consistent.
+
+        :param name: The annotation string, e.g. `MyClass` or an expression such as `list[MyClass]`.
+        """
+
+        if self.context is None:
+            if name.isidentifier():
+                # don't evaluate expressions that are simple identifiers
+                return name
+            raise ValueError("missing context for evaluating types")
+
+        if name.isidentifier():
+            context_type = getattr(self.context, name, None)
+            if isinstance(context_type, type) and self.options.type_transform is not None:
+                return self.options.type_transform(context_type)
+            if context_type is not None:
+                return name
+
+        return self.python_type_to_str(evaluate_type(name, self.context))
+
     def plain_type_to_str(self, data_type: Any) -> str:
         "Returns the string representation of a Python type without metadata."
 
@@ -149,35 +175,11 @@ class TypeFormatter:
         elif data_type is LiteralString:
             return "LiteralString"
         elif isinstance(data_type, ForwardRef):
-            # return forward references as the annotation string
-
-            fwd: ForwardRef = data_type
-            fwd_arg = fwd.__forward_arg__
-
-            if self.context is None:
-                return fwd_arg
-
-            context_type = getattr(self.context, fwd_arg, None)
-            if context_type is None:
-                return self.python_type_to_str(evaluate_type(fwd_arg, self.context))
-
-            if isinstance(context_type, type) and self.options.type_transform is not None:
-                return self.options.type_transform(context_type)
-
-            return fwd_arg
+            # forward reference, e.g. `Optional[ForwardRef('MyClass')]`
+            return self._named_reference_to_str(data_type.__forward_arg__)
         elif isinstance(data_type, str):
-            if self.context is None:
-                if data_type.isidentifier():
-                    # don't evaluate expressions that are simple identifiers
-                    return data_type
-
-                raise ValueError("missing context for evaluating types")
-
-            if data_type.isidentifier() and data_type in self.context.__dict__:
-                # simple type name that is defined in the current context
-                return data_type
-
-            return self.python_type_to_str(evaluate_type(data_type, self.context))
+            # unevaluated string annotation, e.g. a bare data-class field type `field: MyClass`
+            return self._named_reference_to_str(data_type)
         elif isinstance(data_type, (ParamSpec, TypeVar)):
             return data_type.__name__
 

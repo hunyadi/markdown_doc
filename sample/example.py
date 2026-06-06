@@ -323,12 +323,14 @@ class EntityTable:
     :param primary_key: Primary key of the table.
     :param updated_at: The time the record was created or last modified.
     :param foreign_key: A column with a foreign key to another table.
+    :param string_ref: A foreign key written as a string-literal annotation (forward reference).
     :param unique_key: A column with unique values only.
     """
 
     primary_key: int
     updated_at: datetime
     foreign_key: LookupTable
+    string_ref: "LookupTable"
     unique_key: str
 
 
